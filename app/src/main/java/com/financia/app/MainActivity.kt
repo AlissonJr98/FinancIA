@@ -236,7 +236,7 @@ fun FinancIAAppRoot(
                         )
                     }
 
-                    // Botão de Atualização Automática OTA via GitHub
+                    // Botão de Atualização Automática OTA
                     IconButton(onClick = { viewModel.checkForGitHubUpdates(silent = false) }) {
                         BadgedBox(
                             badge = {
@@ -247,7 +247,7 @@ fun FinancIAAppRoot(
                         ) {
                             Icon(
                                 imageVector = Icons.Default.SystemUpdate,
-                                contentDescription = "Verificar Atualização no GitHub"
+                                contentDescription = "Verificar Atualização do App"
                             )
                         }
                     }

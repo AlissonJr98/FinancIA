@@ -1,7 +1,7 @@
 {
-  "versionCode": 2,
-  "versionName": "1.1.0",
-  "title": "FinancIA v1.1.0 — Super Atualização com Google Login, Automação Bancária & Gráficos",
-  "notes": "• Login oficial com Conta Google (1 toque)\n• Captura Automática de Notificações Bancárias (Nubank, Inter, Itaú, Santander, C6, PicPay, BB, Caixa...)\n• Function Calling no Chat IA: peça para o consultor registrar vários gastos direto na conversa\n• Gráfico de Rosca (Donut Chart), Score de Saúde Financeira (0-100) e Meta de Orçamento Mensal\n• Filtro por Mês/Ano, Busca, Edição de Lançamentos, Gastos Fixos e Parcelamento automático\n• Modo Privacidade (ocultar saldo), Proteção por Biometria/Digital e Exportação Excel/CSV\n• Novo Ícone Adaptativo Oficial do FinancIA",
-  "apkUrl": "https://github.com/AlissonJr98/FinancIA/releases/download/v1.1.0/FinancIA.apk"
+  "versionCode": 3,
+  "versionName": "1.1.1",
+  "title": "FinancIA v1.1.1 — Atualização Oficial",
+  "notes": "• Login oficial com Conta Google (1 toque)\n• Captura Automática de Notificações Bancárias (Nubank, Inter, Itaú, Santander, C6, PicPay, BB, Caixa...)\n• Function Calling no Chat IA: peça para o consultor registrar vários gastos direto na conversa\n• Gráfico de Rosca (Donut Chart), Score de Saúde Financeira (0-100) e Meta de Orçamento Mensal\n• Filtro por Mês/Ano, Busca, Edição de Lançamentos, Gastos Fixos e Parcelamento automático\n• Modo Privacidade (ocultar saldo), Proteção por Biometria/Digital e Exportação Excel/CSV\n• Assinatura unificada do pacote APK para atualizações diretas sem conflito",
+  "apkUrl": "https://github.com/AlissonJr98/FinancIA/releases/download/v1.1.1/FinancIA.apk"
 }

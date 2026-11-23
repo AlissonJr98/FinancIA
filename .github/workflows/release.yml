@@ -27,7 +27,7 @@ jobs:
       - name: Configurar Gradle
         uses: gradle/actions/setup-gradle@v3
 
-      - name: Compilar APK Release
+      - name: Compilar APK Release Assinado com Keystore Unificada
         run: |
           chmod +x ./gradlew
           ./gradlew assembleRelease
@@ -36,7 +36,7 @@ jobs:
         run: |
           cp app/build/outputs/apk/release/app-release.apk FinancIA.apk
 
-      - name: Publicar Release no GitHub
+      - name: Publicar Release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
@@ -46,33 +46,3 @@ jobs:
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Atualizar version.json na branch main
-        if: startsWith(github.ref, 'refs/tags/v')
-        run: |
-          TAG="${{ github.ref_name }}"
-          VERSAO_NOME="${TAG#v}"
-          APK_URL="https://github.com/${{ github.repository }}/releases/download/$TAG/FinancIA.apk"
-
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
-          git checkout main
-          git pull origin main
-
-          python3 -c "
-          import json
-          data = {
-              'versionCode': 1,
-              'versionName': '$VERSAO_NOME',
-              'title': 'FinancIA v$VERSAO_NOME',
-              'notes': 'Nova atualização publicada automaticamente via GitHub Releases.',
-              'apkUrl': '$APK_URL'
-          }
-          with open('version.json', 'w', encoding='utf-8') as f:
-              json.dump(data, f, indent=2, ensure_ascii=False)
-          "
-
-          git add version.json
-          git commit -m "chore: auto-update version.json to $TAG [skip ci]" || true
-          git push origin main

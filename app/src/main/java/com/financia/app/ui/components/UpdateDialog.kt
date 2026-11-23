@@ -106,7 +106,7 @@ fun UpdateDialog(
                     )
                     Text(text = "➔", style = MaterialTheme.typography.labelMedium)
                     Text(
-                        text = "GitHub: v${updateInfo.latestVersion}",
+                        text = "Nova: v${updateInfo.latestVersion}",
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary
@@ -122,7 +122,7 @@ fun UpdateDialog(
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
                             Text(
-                                text = "Baixando nova versão direto do GitHub...",
+                                text = "Baixando nova versão do FinancIA...",
                                 style = MaterialTheme.typography.bodySmall,
                                 fontWeight = FontWeight.SemiBold
                             )
@@ -245,8 +245,8 @@ fun UpdateDialog(
                             Icon(Icons.Default.Download, contentDescription = null)
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                if (updateInfo.hasUpdate) "Baixar e Atualizar no App"
-                                else "Baixar / Reinstalar Versão do GitHub"
+                                if (updateInfo.hasUpdate) "Baixar e Atualizar Agora"
+                                else "Baixar / Reinstalar Versão Atual"
                             )
                         }
 

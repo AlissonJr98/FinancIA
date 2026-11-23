@@ -141,7 +141,7 @@ class FinancIAViewModel @Inject constructor(
                     if (!silent) {
                         _uiState.update {
                             it.copy(
-                                updateError = err.localizedMessage ?: "Não foi possível verificar atualizações no GitHub.",
+                                updateError = err.localizedMessage ?: "Não foi possível verificar atualizações.",
                                 showUpdateDialog = true
                             )
                         }
@@ -156,7 +156,7 @@ class FinancIAViewModel @Inject constructor(
                 it.copy(
                     isDownloadingUpdate = true,
                     updateProgress = 0f,
-                    updateProgressText = "Iniciando download do GitHub...",
+                    updateProgressText = "Iniciando download da atualização...",
                     updateError = null,
                     downloadedApkFile = null
                 )
