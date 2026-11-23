@@ -7,19 +7,19 @@ enum class TransactionType(val label: String) {
     EXPENSE("Despesa")
 }
 
-enum class TransactionCategory(val label: String, val iconName: String, val isIncomeDefault: Boolean = false) {
-    ALIMENTACAO("Alimentação", "restaurant"),
-    TRANSPORTE("Transporte", "directions_car"),
-    MORADIA("Moradia", "home"),
-    LAZER("Lazer", "movie"),
-    SAUDE("Saúde", "medical_services"),
-    EDUCACAO("Educação", "school"),
-    COMPRAS("Compras", "shopping_bag"),
-    ASSINATURAS("Assinaturas", "subscriptions"),
-    SALARIO("Salário", "payments", isIncomeDefault = true),
-    INVESTIMENTOS("Investimentos", "trending_up", isIncomeDefault = true),
-    FREELANCE("Freelance", "work", isIncomeDefault = true),
-    OUTROS("Outros", "category");
+enum class TransactionCategory(val label: String, val iconName: String, val colorHex: Long, val isIncomeDefault: Boolean = false) {
+    ALIMENTACAO("Alimentação", "restaurant", 0xFFF97316),
+    TRANSPORTE("Transporte", "directions_car", 0xFF3B82F6),
+    MORADIA("Moradia", "home", 0xFF8B5CF6),
+    LAZER("Lazer", "movie", 0xFFEC4899),
+    SAUDE("Saúde", "medical_services", 0xFFEF4444),
+    EDUCACAO("Educação", "school", 0xFF06B6D4),
+    COMPRAS("Compras", "shopping_bag", 0xFFF59E0B),
+    ASSINATURAS("Assinaturas", "subscriptions", 0xFF6366F1),
+    SALARIO("Salário", "payments", 0xFF10B981, isIncomeDefault = true),
+    INVESTIMENTOS("Investimentos", "trending_up", 0xFF14B8A6, isIncomeDefault = true),
+    FREELANCE("Freelance", "work", 0xFF22C55E, isIncomeDefault = true),
+    OUTROS("Outros", "category", 0xFF64748B);
 
     companion object {
         fun fromLabelOrName(value: String): TransactionCategory {
@@ -41,6 +41,9 @@ data class FinancialTransaction(
     val paymentMethod: String = "Pix",
     val notes: String = "",
     val createdByAi: Boolean = false,
+    val isRecurring: Boolean = false,
+    val installmentCount: Int = 1,
+    val installmentIndex: Int = 1,
     val createdAt: Long = System.currentTimeMillis()
 ) {
     val isIncome: Boolean
@@ -56,6 +59,9 @@ data class FinancialTransaction(
             "paymentMethod" to paymentMethod.take(60),
             "notes" to notes.take(500),
             "createdByAi" to createdByAi,
+            "isRecurring" to isRecurring,
+            "installmentCount" to installmentCount.coerceIn(1, 120),
+            "installmentIndex" to installmentIndex.coerceIn(1, 120),
             "createdAt" to createdAt
         )
         if (id.isNotBlank()) {
@@ -72,7 +78,15 @@ data class AiExtractedTransaction(
     val type: String = "EXPENSE",
     val category: String = "Outros",
     val paymentMethod: String = "Pix",
-    val notes: String = ""
+    val notes: String = "",
+    val isRecurring: Boolean = false,
+    val installmentCount: Int = 1
+)
+
+@Serializable
+data class AiChatActionResponse(
+    val reply: String = "",
+    val transactionsToCreate: List<AiExtractedTransaction> = emptyList()
 )
 
 data class ChatMessage(

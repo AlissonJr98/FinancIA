@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Carteira Minimalista Branca -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M30,36h48c3.3,0 6,2.7 6,6v26c0,3.3 -2.7,6 -6,6H30c-3.3,0 -6,-2.7 -6,-6V42c0,-3.3 2.7,-6 6,-6z" />
+    <!-- Detalhe interno esmeralda -->
+    <path
+        android:fillColor="#00897B"
+        android:pathData="M64,51h16v8H64c-2.2,0 -4,-1.8 -4,-4s1.8,-4 4,-4z" />
+    <!-- Estrela / Faísca de Inteligência Artificial Dourada/Lilás -->
+    <path
+        android:fillColor="#FFD54F"
+        android:pathData="M72,22l2.5,6.5L81,31l-6.5,2.5L72,40l-2.5,-6.5L63,31l6.5,-2.5z" />
+</vector>

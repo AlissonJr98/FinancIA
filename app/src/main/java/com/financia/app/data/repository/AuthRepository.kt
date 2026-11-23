@@ -2,6 +2,7 @@ package com.financia.app.data.repository
 
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
+import com.google.firebase.auth.GoogleAuthProvider
 import com.google.firebase.auth.userProfileChangeRequest
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.SetOptions
@@ -48,6 +49,14 @@ class AuthRepository @Inject constructor(
         user
     }
 
+    suspend fun signInWithGoogleIdToken(idToken: String): Result<FirebaseUser> = runCatching {
+        val credential = GoogleAuthProvider.getCredential(idToken, null)
+        val result = auth.signInWithCredential(credential).await()
+        val user = result.user ?: error("Não foi possível autenticar com a Conta Google.")
+        ensureUserProfile(user)
+        user
+    }
+
     suspend fun signInAnonymously(): Result<FirebaseUser> = runCatching {
         val result = auth.signInAnonymously().await()
         val user = result.user ?: error("Não foi possível iniciar sessão de convidado.")
@@ -70,6 +79,32 @@ class AuthRepository @Inject constructor(
                 .set(profileData, SetOptions.merge())
                 .await()
         }
+    }
+
+    fun observeMonthlyBudget(userId: String): Flow<Double> = callbackFlow {
+        val subscription = firestore.collection("users")
+            .document(userId)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    trySend(0.0)
+                    return@addSnapshotListener
+                }
+                val budget = snapshot?.getDouble("monthlyBudget") ?: 0.0
+                trySend(budget)
+            }
+        awaitClose { subscription.remove() }
+    }
+
+    suspend fun updateMonthlyBudget(budget: Double): Result<Unit> = runCatching {
+        val uid = auth.currentUser?.uid ?: error("Usuário não autenticado.")
+        val data = mapOf(
+            "monthlyBudget" to budget.coerceAtLeast(0.0),
+            "updatedAt" to System.currentTimeMillis()
+        )
+        firestore.collection("users")
+            .document(uid)
+            .set(data, SetOptions.merge())
+            .await()
     }
 
     fun signOut() {

@@ -11,6 +11,7 @@ import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.tasks.await
+import java.util.Calendar
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -38,6 +39,9 @@ class TransactionRepository @Inject constructor(
                     val paymentMethod = doc.getString("paymentMethod") ?: "Pix"
                     val notes = doc.getString("notes") ?: ""
                     val createdByAi = doc.getBoolean("createdByAi") ?: false
+                    val isRecurring = doc.getBoolean("isRecurring") ?: false
+                    val installmentCount = (doc.getLong("installmentCount") ?: 1L).toInt()
+                    val installmentIndex = (doc.getLong("installmentIndex") ?: 1L).toInt()
                     val createdAt = doc.getLong("createdAt") ?: dateTimestamp
 
                     FinancialTransaction(
@@ -50,6 +54,9 @@ class TransactionRepository @Inject constructor(
                         paymentMethod = paymentMethod,
                         notes = notes,
                         createdByAi = createdByAi,
+                        isRecurring = isRecurring,
+                        installmentCount = installmentCount,
+                        installmentIndex = installmentIndex,
                         createdAt = createdAt
                     )
                 } ?: emptyList()
@@ -61,13 +68,56 @@ class TransactionRepository @Inject constructor(
     suspend fun addTransaction(transaction: FinancialTransaction): Result<String> = runCatching {
         val uid = auth.currentUser?.uid ?: error("Usuário não autenticado.")
         val colRef = firestore.collection("users").document(uid).collection("transactions")
-        val docRef = colRef.document()
-        val withId = transaction.copy(
-            id = docRef.id,
-            createdAt = System.currentTimeMillis()
-        )
-        docRef.set(withId.toFirestoreMap()).await()
-        docRef.id
+
+        val totalInstallments = transaction.installmentCount.coerceIn(1, 48)
+        if (totalInstallments <= 1) {
+            val docRef = colRef.document()
+            val withId = transaction.copy(
+                id = docRef.id,
+                installmentCount = 1,
+                installmentIndex = 1,
+                createdAt = System.currentTimeMillis()
+            )
+            docRef.set(withId.toFirestoreMap()).await()
+            docRef.id
+        } else {
+            // Gera automaticamente as parcelas para cada mês subsequente em lote (Batch)
+            val batch = firestore.batch()
+            val perInstallmentAmount = (transaction.amount / totalInstallments * 100.0).toInt() / 100.0
+            var firstId = ""
+            val cal = Calendar.getInstance().apply { timeInMillis = transaction.dateTimestamp }
+
+            for (idx in 1..totalInstallments) {
+                val docRef = colRef.document()
+                if (idx == 1) firstId = docRef.id
+                val txDate = cal.timeInMillis
+                val instTitle = "${transaction.title} ($idx/$totalInstallments)"
+                val instTx = transaction.copy(
+                    id = docRef.id,
+                    title = instTitle.take(200),
+                    amount = if (perInstallmentAmount > 0) perInstallmentAmount else transaction.amount,
+                    dateTimestamp = txDate,
+                    installmentCount = totalInstallments,
+                    installmentIndex = idx,
+                    createdAt = System.currentTimeMillis()
+                )
+                batch.set(docRef, instTx.toFirestoreMap())
+                cal.add(Calendar.MONTH, 1)
+            }
+            batch.commit().await()
+            firstId
+        }
+    }
+
+    suspend fun updateTransaction(transaction: FinancialTransaction): Result<Unit> = runCatching {
+        val uid = auth.currentUser?.uid ?: error("Usuário não autenticado.")
+        require(transaction.id.isNotBlank()) { "ID da transação inválido." }
+        firestore.collection("users")
+            .document(uid)
+            .collection("transactions")
+            .document(transaction.id)
+            .set(transaction.toFirestoreMap())
+            .await()
     }
 
     suspend fun deleteTransaction(transactionId: String): Result<Unit> = runCatching {

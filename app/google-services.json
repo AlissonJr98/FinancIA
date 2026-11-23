@@ -12,7 +12,20 @@
           "package_name": "com.financia.app"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "1033734358750-qdnqkkr8f6i7e0ndo8kmfuuf3gvfenbe.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.financia.app",
+            "certificate_hash": "a035161eea0c894df51b282f54fe5ed465202530"
+          }
+        },
+        {
+          "client_id": "1033734358750-qpf8c4laa3fc818l9lnvlfhbq3mm216b.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyA_SDf4aXHWdl8Ipjp3rtXZ6U4dL9_SrKg"
@@ -20,7 +33,12 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "1033734358750-qpf8c4laa3fc818l9lnvlfhbq3mm216b.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
         }
       }
     }

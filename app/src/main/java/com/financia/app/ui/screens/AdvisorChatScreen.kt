@@ -56,10 +56,10 @@ fun AdvisorChatScreen(
     var inputQuestion by remember { mutableStateOf("") }
 
     val quickPrompts = listOf(
+        "Registra aí: gastei 32 na padaria e 150 de gasolina",
         "Onde estou gastando mais esse mês?",
         "Me dê 3 dicas práticas para economizar",
-        "Faça um diagnóstico do meu saldo atual",
-        "Como organizar uma reserva de emergência?"
+        "Faça um diagnóstico do meu saldo e meta mensal"
     )
 
     Column(
@@ -67,7 +67,7 @@ fun AdvisorChatScreen(
             .fillMaxSize()
             .padding(16.dp)
     ) {
-        // Cabeçalho do Consultor IA
+        // Cabeçalho do Consultor IA com Function Calling
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(16.dp),
@@ -97,12 +97,12 @@ fun AdvisorChatScreen(
                 Spacer(modifier = Modifier.width(12.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "Consultor FinancIA (Gemini)",
+                        text = "Consultor & Agente FinancIA (Gemini)",
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        text = "Conectado aos seus lançamentos em tempo real",
+                        text = "Tira dúvidas, analisa orçamento e lança gastos direto pelo chat!",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -120,7 +120,7 @@ fun AdvisorChatScreen(
 
         Spacer(modifier = Modifier.height(10.dp))
 
-        // Sugestões de perguntas rápidas
+        // Sugestões de perguntas e comandos rápidos
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -141,7 +141,6 @@ fun AdvisorChatScreen(
 
         Spacer(modifier = Modifier.height(10.dp))
 
-        // Lista de Mensagens
         LazyColumn(
             modifier = Modifier
                 .weight(1f)
@@ -161,12 +160,12 @@ fun AdvisorChatScreen(
                             verticalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             Text(
-                                text = "Olá! Sou seu assistente financeiro pessoal 👋",
+                                text = "Olá! Sou seu consultor e agente financeiro 👋",
                                 style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
-                                text = "Eu analiso suas receitas, despesas e categorias salvas no Firestore para responder dúvidas, identificar gargalos no seu orçamento e sugerir metas de economia. Escolha uma pergunta acima ou digite abaixo!",
+                                text = "Agora você também pode pedir para eu lançar vários gastos direto por aqui! Experimente enviar:\n\"Registra que gastei 35 no almoço e 80 de Uber\" ou pergunte como economizar neste mês.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -224,7 +223,7 @@ fun AdvisorChatScreen(
                             strokeWidth = 2.dp
                         )
                         Text(
-                            text = "Gemini está analisando suas finanças...",
+                            text = "Gemini está analisando e executando ações...",
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -235,7 +234,6 @@ fun AdvisorChatScreen(
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        // Barra de envio de mensagem
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
@@ -243,7 +241,7 @@ fun AdvisorChatScreen(
             OutlinedTextField(
                 value = inputQuestion,
                 onValueChange = { inputQuestion = it },
-                placeholder = { Text("Pergunte sobre seus gastos...") },
+                placeholder = { Text("Pergunte ou peça para lançar gastos...") },
                 modifier = Modifier.weight(1f),
                 shape = RoundedCornerShape(24.dp),
                 maxLines = 3

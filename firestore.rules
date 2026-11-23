@@ -28,6 +28,9 @@ rules_version = '2';
 //   - paymentMethod: string (optional, <= 60 chars) - Payment method label
 //   - createdByAi: bool (optional) - Whether transaction was created via AI assistant
 //   - createdAt: number or timestamp (optional, immutable if present) - Creation timestamp
+//   - isRecurring: bool (optional) - Whether transaction repeats monthly
+//   - installmentCount: int (optional, 1..120) - Total number of installments
+//   - installmentIndex: int (optional, 1..120) - Current installment index (1-based)
 //
 // Subcollection: /users/{userId}/chatMessages/{messageId}
 // Document ID: {messageId}
@@ -53,23 +56,6 @@ service cloud.firestore {
     // Check if user owns the resource (for user-scoped documents)
     function isOwner(userId) {
       return isAuthenticated() && request.auth.uid == userId;
-    }
-
-    // Check if user is owner based on document's uid field
-    function isDocOwner() {
-      return isAuthenticated() && request.auth.uid == resource.data.uid;
-    }
-
-    // Verify UID hasn't been tampered with on create
-    function uidUnchanged() {
-      return !('uid' in request.resource.data) ||
-        request.resource.data.uid == request.auth.uid;
-    }
-
-    // Ensure uid field is not modified on update
-    function uidNotModified() {
-      return !('uid' in request.resource.data) ||
-        request.resource.data.uid == resource.data.uid;
     }
 
     // Validate required fields exist
@@ -137,7 +123,8 @@ service cloud.firestore {
       let requiredFields = ['title', 'amount', 'type', 'category', 'dateTimestamp'];
       let allowedFields = [
         'title', 'amount', 'type', 'category', 'dateTimestamp',
-        'id', 'notes', 'paymentMethod', 'createdByAi', 'createdAt'
+        'id', 'notes', 'paymentMethod', 'createdByAi', 'createdAt',
+        'isRecurring', 'installmentCount', 'installmentIndex'
       ];
       return hasRequiredFields(requiredFields) &&
         hasOnlyAllowedFields(allowedFields) &&
@@ -150,7 +137,10 @@ service cloud.firestore {
         isValidOptionalString('notes', 0, 500) &&
         isValidOptionalString('paymentMethod', 0, 60) &&
         (!('createdByAi' in data) || data.createdByAi is bool) &&
-        (!('createdAt' in data) || isNumberOrTimestamp(data.createdAt));
+        (!('createdAt' in data) || isNumberOrTimestamp(data.createdAt)) &&
+        (!('isRecurring' in data) || data.isRecurring is bool) &&
+        (!('installmentCount' in data) || (data.installmentCount is int && data.installmentCount >= 1 && data.installmentCount <= 120)) &&
+        (!('installmentIndex' in data) || (data.installmentIndex is int && data.installmentIndex >= 1 && data.installmentIndex <= 120));
     }
 
     // Validate AI Chat Message document (/users/{userId}/chatMessages/{messageId})

@@ -15,8 +15,8 @@ android {
         applicationId = "com.financia.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 2
+        versionName = "1.1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -24,8 +24,6 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = false
-            // Assina com debug key por padrão caso não haja keystore customizada,
-            // garantindo que o APK de release instale diretamente em qualquer celular
             signingConfig = signingConfigs.getByName("debug")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
@@ -45,6 +43,8 @@ android {
 
 dependencies {
     implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.appcompat)
+    implementation(libs.androidx.biometric)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.lifecycle.runtime.compose)
@@ -62,11 +62,12 @@ dependencies {
     ksp(libs.hilt.compiler)
     implementation(libs.androidx.hilt.navigation.compose)
 
-    // Firebase (Auth, Firestore, AI Logic / Gemini)
+    // Firebase (Auth, Firestore, AI Logic / Gemini) & Google Sign-In
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.auth)
     implementation(libs.firebase.firestore)
     implementation(libs.firebase.ai)
+    implementation(libs.play.services.auth)
 
     // Coroutines & JSON Serialization
     implementation(libs.kotlinx.coroutines.play.services)
