@@ -11,6 +11,9 @@ import androidx.compose.material.icons.automirrored.filled.ExitToApp
 import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.ChatBubbleOutline
+import androidx.compose.material.icons.filled.SystemUpdate
+import androidx.compose.material3.BadgedBox
+import androidx.compose.material3.Badge
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -31,6 +34,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.financia.app.ui.FinancIAViewModel
+import com.financia.app.ui.components.UpdateDialog
 import com.financia.app.ui.screens.AdvisorChatScreen
 import com.financia.app.ui.screens.AuthScreen
 import com.financia.app.ui.screens.DashboardScreen
@@ -67,6 +71,23 @@ fun FinancIAAppRoot(
     val transactions by viewModel.transactions.collectAsState()
     val chatMessages by viewModel.chatMessages.collectAsState()
 
+    // Modal de Atualização Automática OTA via GitHub (exibe tanto no login quanto logado)
+    if (uiState.showUpdateDialog && uiState.updateInfo != null) {
+        UpdateDialog(
+            updateInfo = uiState.updateInfo!!,
+            isDownloading = uiState.isDownloadingUpdate,
+            downloadProgress = uiState.updateProgress,
+            downloadProgressText = uiState.updateProgressText,
+            downloadedFile = uiState.downloadedApkFile,
+            updateError = uiState.updateError,
+            canInstall = viewModel.canRequestPackageInstalls(),
+            onDismiss = viewModel::dismissUpdateDialog,
+            onDownload = viewModel::startUpdateDownload,
+            onInstall = viewModel::installDownloadedApk,
+            onRequestPermission = viewModel::requestInstallPermission
+        )
+    }
+
     if (currentUser == null) {
         AuthScreen(
             isLoading = uiState.isLoadingAuth,
@@ -91,6 +112,20 @@ fun FinancIAAppRoot(
                     )
                 },
                 actions = {
+                    IconButton(onClick = { viewModel.checkForGitHubUpdates(silent = false) }) {
+                        BadgedBox(
+                            badge = {
+                                if (uiState.updateInfo?.hasUpdate == true) {
+                                    Badge()
+                                }
+                            }
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.SystemUpdate,
+                                contentDescription = "Verificar Atualização no GitHub"
+                            )
+                        }
+                    }
                     IconButton(onClick = viewModel::signOut) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ExitToApp,

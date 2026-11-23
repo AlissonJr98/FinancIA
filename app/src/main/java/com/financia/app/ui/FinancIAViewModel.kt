@@ -3,6 +3,8 @@ package com.financia.app.ui
 import android.graphics.Bitmap
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.financia.app.core.update.AppUpdateInfo
+import com.financia.app.core.update.GitHubUpdateChecker
 import com.financia.app.data.model.AiExtractedTransaction
 import com.financia.app.data.model.ChatMessage
 import com.financia.app.data.model.FinancialTransaction
@@ -23,6 +25,8 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.io.File
+import java.util.Locale
 import javax.inject.Inject
 
 data class FinancIAUiState(
@@ -32,7 +36,15 @@ data class FinancIAUiState(
     val aiStatusMessage: String? = null,
     val pendingAiDraft: AiExtractedTransaction? = null,
     val isAdvisorThinking: Boolean = false,
-    val selectedCategoryFilter: String? = null
+    val selectedCategoryFilter: String? = null,
+    // OTA Update States
+    val updateInfo: AppUpdateInfo? = null,
+    val showUpdateDialog: Boolean = false,
+    val isDownloadingUpdate: Boolean = false,
+    val updateProgress: Float = 0f,
+    val updateProgressText: String = "",
+    val downloadedApkFile: File? = null,
+    val updateError: String? = null
 )
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -40,7 +52,8 @@ data class FinancIAUiState(
 class FinancIAViewModel @Inject constructor(
     private val authRepository: AuthRepository,
     private val transactionRepository: TransactionRepository,
-    private val aiRepository: AiFinancialRepository
+    private val aiRepository: AiFinancialRepository,
+    private val updateChecker: GitHubUpdateChecker
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(FinancIAUiState())
@@ -68,6 +81,104 @@ class FinancIAViewModel @Inject constructor(
             }
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    init {
+        checkForGitHubUpdates(silent = true)
+    }
+
+    // --- GitHub OTA Auto-Update ---
+
+    fun checkForGitHubUpdates(silent: Boolean = false) {
+        viewModelScope.launch {
+            updateChecker.checkForUpdates()
+                .onSuccess { info ->
+                    if (!silent || info.hasUpdate) {
+                        _uiState.update {
+                            it.copy(
+                                updateInfo = info,
+                                showUpdateDialog = true,
+                                updateError = null
+                            )
+                        }
+                    } else {
+                        _uiState.update { it.copy(updateInfo = info) }
+                    }
+                }
+                .onFailure { err ->
+                    if (!silent) {
+                        _uiState.update {
+                            it.copy(
+                                updateError = err.localizedMessage ?: "Não foi possível verificar atualizações no GitHub.",
+                                showUpdateDialog = true
+                            )
+                        }
+                    }
+                }
+        }
+    }
+
+    fun startUpdateDownload(apkUrl: String) {
+        viewModelScope.launch {
+            _uiState.update {
+                it.copy(
+                    isDownloadingUpdate = true,
+                    updateProgress = 0f,
+                    updateProgressText = "Iniciando download do GitHub...",
+                    updateError = null,
+                    downloadedApkFile = null
+                )
+            }
+
+            updateChecker.downloadApkInApp(
+                apkUrl = apkUrl,
+                onProgress = { progress, downloadedMb, totalMb ->
+                    val pct = (progress * 100).toInt()
+                    val text = String.format(Locale.US, "%.1f MB / %.1f MB (%d%%)", downloadedMb, totalMb, pct)
+                    _uiState.update {
+                        it.copy(
+                            updateProgress = progress,
+                            updateProgressText = text
+                        )
+                    }
+                },
+                onSuccess = { file ->
+                    _uiState.update {
+                        it.copy(
+                            isDownloadingUpdate = false,
+                            updateProgress = 1f,
+                            downloadedApkFile = file
+                        )
+                    }
+                    if (updateChecker.canRequestPackageInstalls()) {
+                        updateChecker.installApk(file)
+                    }
+                },
+                onError = { errorMsg ->
+                    _uiState.update {
+                        it.copy(
+                            isDownloadingUpdate = false,
+                            updateError = errorMsg
+                        )
+                    }
+                }
+            )
+        }
+    }
+
+    fun canRequestPackageInstalls(): Boolean = updateChecker.canRequestPackageInstalls()
+
+    fun requestInstallPermission() {
+        updateChecker.openInstallPermissionSettings()
+    }
+
+    fun installDownloadedApk() {
+        val file = _uiState.value.downloadedApkFile ?: return
+        updateChecker.installApk(file)
+    }
+
+    fun dismissUpdateDialog() {
+        _uiState.update { it.copy(showUpdateDialog = false, updateError = null) }
+    }
 
     // --- Authentication ---
 
