@@ -34,6 +34,7 @@ rules_version = '2';
 //   - expenseNature: string (optional, enum: ['FIXED', 'VARIABLE', 'DEBT']) - Expense classification
 //   - fixedBillId: string (optional, <= 128 chars) - Linked fixed bill template ID
 //   - loanId: string (optional, <= 128 chars) - Linked loan/financing ID
+//   - accountName: string (optional, <= 80 chars) - Bank/wallet account name (e.g., 'Nubank', 'Inter', 'Itaú', 'Carteira')
 //
 // Subcollection: /users/{userId}/fixedBills/{billId}
 // Document ID: {billId}
@@ -177,7 +178,7 @@ service cloud.firestore {
         'title', 'amount', 'type', 'category', 'dateTimestamp',
         'id', 'notes', 'paymentMethod', 'createdByAi', 'createdAt',
         'isRecurring', 'installmentCount', 'installmentIndex',
-        'expenseNature', 'fixedBillId', 'loanId'
+        'expenseNature', 'fixedBillId', 'loanId', 'accountName'
       ];
       return hasRequiredFields(requiredFields) &&
         hasOnlyAllowedFields(allowedFields) &&
@@ -196,7 +197,8 @@ service cloud.firestore {
         (!('installmentIndex' in data) || (data.installmentIndex is int && data.installmentIndex >= 1 && data.installmentIndex <= 480)) &&
         (!('expenseNature' in data) || (data.expenseNature is string && data.expenseNature in ['FIXED', 'VARIABLE', 'DEBT'])) &&
         isValidOptionalString('fixedBillId', 0, 128) &&
-        isValidOptionalString('loanId', 0, 128);
+        isValidOptionalString('loanId', 0, 128) &&
+        isValidOptionalString('accountName', 0, 80);
     }
 
     // Validate Fixed Bill Template document (/users/{userId}/fixedBills/{billId})

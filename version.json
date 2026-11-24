@@ -1,7 +1,7 @@
 {
-  "versionCode": 6,
-  "versionName": "1.4.0",
-  "title": "FinancIA v1.4.0 — Novos Filtros Dropdown, Caixas de Texto e Botões em Gradiente",
-  "notes": "• Novos Filtros Dropdown que abrem a caixa de seleção no Dashboard (Categoria com ícones, Tipo Fixa/Variável/Receita e Ordenação por Valor/Data/A-Z)\n• Formulário de Lançamento renovado com caixas de seleção Dropdown para Categoria, Tipo de Despesa, Forma de Pagamento e Parcelas\n• Novas Caixas de Texto estilizadas com prefixo R$, fundo tonal suave e botão rápido de limpar (X)\n• Novos Botões em Gradiente Esmeralda e Roxo IA + Seletor Segmentado Despesa/Receita",
-  "apkUrl": "https://github.com/AlissonJr98/FinancIA/releases/download/v1.4.0/FinancIA.apk"
+  "versionCode": 7,
+  "versionName": "1.5.0",
+  "title": "FinancIA v1.5.0 — Calendário DatePicker, Contas Bancárias, Relatório PDF, Importar Extrato & Widget",
+  "notes": "• Seletor de Data (DatePicker) que abre o calendário do Android no Lançamento e na Edição\n• Controle por Conta/Banco (Nubank, Inter, Itaú, Bradesco, Santander, BB, Caixa, C6, PicPay, Carteira...) com caixa de seleção Dropdown\n• Exportação de Relatório Mensal em PDF visualmente formatado + Excel/CSV\n• Importador Inteligente de Extrato Bancário (arquivos .CSV e .OFX)\n• Novo Widget do FinancIA para a Tela Inicial do seu Android (mostra Saldo + botão '+ Lançar IA')",
+  "apkUrl": "https://github.com/AlissonJr98/FinancIA/releases/download/v1.5.0/FinancIA.apk"
 }

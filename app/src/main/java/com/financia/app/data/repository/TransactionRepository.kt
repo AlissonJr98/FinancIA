@@ -43,6 +43,7 @@ class TransactionRepository @Inject constructor(
                     val category = doc.getString("category") ?: TransactionCategory.OUTROS.label
                     val dateTimestamp = doc.getLong("dateTimestamp") ?: System.currentTimeMillis()
                     val paymentMethod = doc.getString("paymentMethod") ?: "Pix"
+                    val accountName = doc.getString("accountName") ?: "Nubank"
                     val notes = doc.getString("notes") ?: ""
                     val createdByAi = doc.getBoolean("createdByAi") ?: false
                     val isRecurring = doc.getBoolean("isRecurring") ?: false
@@ -62,6 +63,7 @@ class TransactionRepository @Inject constructor(
                         category = category,
                         dateTimestamp = dateTimestamp,
                         paymentMethod = paymentMethod,
+                        accountName = accountName,
                         notes = notes,
                         createdByAi = createdByAi,
                         isRecurring = isRecurring,

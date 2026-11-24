@@ -350,6 +350,9 @@ fun FinancIAAppRoot(
                         onAskAiCanIBuy = { prompt ->
                             currentTab = MainTab.ADVISOR
                             viewModel.sendAdvisorMessage(prompt)
+                        },
+                        onImportStatement = { uri, accName, onDone ->
+                            viewModel.importBankStatementFile(context, uri, accName, onDone)
                         }
                     )
                 }

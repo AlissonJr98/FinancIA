@@ -27,6 +27,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccountBalance
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.AutoAwesome
@@ -37,7 +38,6 @@ import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.Mic
-import androidx.compose.material.icons.filled.Notes
 import androidx.compose.material.icons.filled.Payment
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Card
@@ -53,6 +53,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -64,9 +65,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.financia.app.data.model.AiExtractedTransaction
+import com.financia.app.data.model.BankAccountOption
 import com.financia.app.data.model.ExpenseNature
 import com.financia.app.data.model.TransactionCategory
 import com.financia.app.ui.components.CategoryIconMapper
+import com.financia.app.ui.components.FinancIADatePickerField
 import com.financia.app.ui.components.FinancIADropdownField
 import com.financia.app.ui.components.FinancIAPrimaryButton
 import com.financia.app.ui.components.FinancIASecondaryButton
@@ -87,6 +90,8 @@ fun SmartEntryScreen(
         isIncome: Boolean,
         category: String,
         paymentMethod: String,
+        accountName: String,
+        dateTimestamp: Long,
         notes: String,
         createdByAi: Boolean,
         isRecurring: Boolean,
@@ -103,6 +108,8 @@ fun SmartEntryScreen(
     var isIncome by remember { mutableStateOf(false) }
     var selectedCategory by remember { mutableStateOf(TransactionCategory.ALIMENTACAO.label) }
     var selectedPayment by remember { mutableStateOf("Pix") }
+    var selectedAccount by remember { mutableStateOf(BankAccountOption.NUBANK.label) }
+    var selectedTimestamp by remember { mutableLongStateOf(System.currentTimeMillis()) }
     var notes by remember { mutableStateOf("") }
     var selectedNature by remember { mutableStateOf(ExpenseNature.VARIABLE) }
     var installmentCount by remember { mutableIntStateOf(1) }
@@ -112,6 +119,7 @@ fun SmartEntryScreen(
 
     val categoryOptions = remember { TransactionCategory.entries.map { it.label } }
     val natureOptions = remember { ExpenseNature.entries.map { it.label } }
+    val bankAccountOptions = remember { BankAccountOption.entries.map { it.label } }
     val paymentMethods = remember { listOf("Pix", "Cartão de Crédito", "Cartão de Débito", "Boleto", "Dinheiro") }
     val installmentDropdownOptions = remember {
         listOf(
@@ -139,6 +147,9 @@ fun SmartEntryScreen(
             isIncome = pendingAiDraft.type.equals("INCOME", ignoreCase = true)
             selectedCategory = pendingAiDraft.category
             selectedPayment = pendingAiDraft.paymentMethod
+            if (pendingAiDraft.accountName.isNotBlank()) {
+                selectedAccount = pendingAiDraft.accountName
+            }
             notes = pendingAiDraft.notes
             selectedNature = runCatching {
                 ExpenseNature.valueOf(pendingAiDraft.expenseNature)
@@ -325,7 +336,7 @@ fun SmartEntryScreen(
             }
         }
 
-        // Bloco 2: Formulário com Caixas de Seleção Dropdown (Select Boxes)
+        // Bloco 2: Formulário com Caixas de Seleção Dropdown + DatePicker + Contas/Bancos
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(22.dp),
@@ -344,7 +355,6 @@ fun SmartEntryScreen(
                     fontWeight = FontWeight.Bold
                 )
 
-                // Seletor Segmentado Despesa vs Receita
                 SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
                     SegmentedButton(
                         selected = !isIncome,
@@ -364,7 +374,6 @@ fun SmartEntryScreen(
                     }
                 }
 
-                // Caixa de Texto: Descrição + Botão Auto-Categorizar IA
                 FinancIATextField(
                     value = title,
                     onValueChange = { title = it },
@@ -395,34 +404,61 @@ fun SmartEntryScreen(
                     } else null
                 )
 
-                // Caixa de Texto: Valor em R$
-                FinancIATextField(
-                    value = amountText,
-                    onValueChange = { amountText = it },
-                    label = if (!isIncome && installmentCount > 1) {
-                        "Valor Total (será dividido em ${installmentCount}x)"
-                    } else {
-                        "Valor do Lançamento"
-                    },
-                    prefixText = "R$ ",
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
-                )
+                // Valor + Data (DatePicker que abre o Calendário)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    FinancIATextField(
+                        value = amountText,
+                        onValueChange = { amountText = it },
+                        label = if (!isIncome && installmentCount > 1) {
+                            "Valor Total (${installmentCount}x)"
+                        } else {
+                            "Valor"
+                        },
+                        prefixText = "R$ ",
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        modifier = Modifier.weight(1.1f)
+                    )
 
-                // Dropdown 1: Categoria (com ícones coloridos dentro da caixa de seleção)
-                FinancIADropdownField(
-                    label = "Selecionar Categoria",
-                    selectedValue = selectedCategory,
-                    options = categoryOptions,
-                    onOptionSelected = { chosen ->
-                        selectedCategory = chosen
-                        val catEnum = TransactionCategory.fromLabelOrName(chosen)
-                        selectedNature = catEnum.defaultNature
-                    },
-                    optionIconProvider = { CategoryIconMapper.getIcon(it) },
-                    optionColorProvider = { Color(TransactionCategory.fromLabelOrName(it).colorHex) }
-                )
+                    FinancIADatePickerField(
+                        label = "Data",
+                        selectedTimestamp = selectedTimestamp,
+                        onDateSelected = { selectedTimestamp = it },
+                        modifier = Modifier.weight(0.9f)
+                    )
+                }
 
-                // Dropdown 2: Natureza da Despesa (Fixa, Variável ou Empréstimo/Financiamento)
+                // Dropdown 1: Categoria + Dropdown 2: Conta / Banco (Nubank, Inter, Itaú...)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    FinancIADropdownField(
+                        label = "Categoria",
+                        selectedValue = selectedCategory,
+                        options = categoryOptions,
+                        onOptionSelected = { chosen ->
+                            selectedCategory = chosen
+                            val catEnum = TransactionCategory.fromLabelOrName(chosen)
+                            selectedNature = catEnum.defaultNature
+                        },
+                        optionIconProvider = { CategoryIconMapper.getIcon(it) },
+                        optionColorProvider = { Color(TransactionCategory.fromLabelOrName(it).colorHex) },
+                        modifier = Modifier.weight(1.1f)
+                    )
+
+                    FinancIADropdownField(
+                        label = "Conta / Banco",
+                        selectedValue = selectedAccount,
+                        options = bankAccountOptions,
+                        leadingIcon = Icons.Default.AccountBalance,
+                        onOptionSelected = { selectedAccount = it },
+                        modifier = Modifier.weight(0.9f)
+                    )
+                }
+
                 if (!isIncome) {
                     FinancIADropdownField(
                         label = "Tipo de Despesa (Fixa, Variável ou Empréstimo)",
@@ -443,7 +479,6 @@ fun SmartEntryScreen(
                     )
                 }
 
-                // Dropdown 3: Forma de Pagamento + Dropdown 4: Parcelamento Longo
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -500,12 +535,11 @@ fun SmartEntryScreen(
                     )
                 }
 
-                // Caixa de Texto: Observações
                 FinancIATextField(
                     value = notes,
                     onValueChange = { notes = it },
                     label = "Observações (opcional)",
-                    leadingIcon = Icons.Default.Notes,
+                    leadingIcon = Icons.Default.Description,
                     singleLine = false,
                     maxLines = 2
                 )
@@ -528,6 +562,8 @@ fun SmartEntryScreen(
                             isIncome,
                             selectedCategory,
                             selectedPayment,
+                            selectedAccount,
+                            selectedTimestamp,
                             notes,
                             wasPopulatedByAi,
                             selectedNature == ExpenseNature.FIXED && installmentCount == 1,

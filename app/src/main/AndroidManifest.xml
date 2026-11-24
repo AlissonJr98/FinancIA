@@ -6,7 +6,7 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.USE_BIOMETRIC" />
-    <!-- Permissão para Atualização Automática OTA In-App via GitHub -->
+    <!-- Permissão para Atualização Automática OTA In-App -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <queries>
@@ -36,7 +36,7 @@
             </intent-filter>
         </activity>
 
-        <!-- Serviço Automático de Captura de Notificações Bancárias (Nubank, Inter, Itaú, etc.) -->
+        <!-- Serviço Automático de Captura de Notificações Bancárias -->
         <service
             android:name=".core.notifications.BankNotificationService"
             android:exported="true"
@@ -46,6 +46,19 @@
                 <action android:name="android.service.notification.NotificationListenerService" />
             </intent-filter>
         </service>
+
+        <!-- Widget da Tela Inicial do Android -->
+        <receiver
+            android:name=".core.widget.FinancIAWidgetProvider"
+            android:exported="true"
+            android:label="FinancIA Saldo &amp; IA">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/financia_widget_info" />
+        </receiver>
 
         <provider
             android:name="androidx.core.content.FileProvider"

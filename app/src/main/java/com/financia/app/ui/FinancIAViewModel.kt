@@ -1,8 +1,11 @@
 package com.financia.app.ui
 
+import android.content.Context
 import android.graphics.Bitmap
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.financia.app.core.importer.BankStatementImporter
 import com.financia.app.core.update.AppUpdateInfo
 import com.financia.app.core.update.GitHubUpdateChecker
 import com.financia.app.data.model.AiExtractedTransaction
@@ -453,6 +456,8 @@ class FinancIAViewModel @Inject constructor(
         isIncome: Boolean,
         category: String,
         paymentMethod: String,
+        accountName: String = "Nubank",
+        dateTimestamp: Long = selectedMonthTimestamp(),
         notes: String,
         createdByAi: Boolean = false,
         isRecurring: Boolean = false,
@@ -466,8 +471,9 @@ class FinancIAViewModel @Inject constructor(
                 amount = amount,
                 type = if (isIncome) TransactionType.INCOME.name else TransactionType.EXPENSE.name,
                 category = category,
-                dateTimestamp = selectedMonthTimestamp(),
+                dateTimestamp = dateTimestamp,
                 paymentMethod = paymentMethod,
+                accountName = accountName,
                 notes = notes.trim(),
                 createdByAi = createdByAi,
                 isRecurring = isRecurring,
@@ -476,6 +482,27 @@ class FinancIAViewModel @Inject constructor(
             )
             transactionRepository.addTransaction(tx)
             _uiState.update { it.copy(pendingAiDraft = null, aiStatusMessage = "Lançamento salvo na nuvem!") }
+        }
+    }
+
+    fun importBankStatementFile(
+        context: Context,
+        uri: Uri,
+        accountName: String,
+        onComplete: (Int) -> Unit
+    ) {
+        viewModelScope.launch {
+            val parsedList = BankStatementImporter.parseStatementUri(
+                context = context,
+                uri = uri,
+                defaultAccountName = accountName,
+                aiRepository = aiRepository
+            )
+            val targetTime = selectedMonthTimestamp()
+            parsedList.forEach { tx ->
+                transactionRepository.addTransaction(tx.copy(dateTimestamp = targetTime))
+            }
+            onComplete(parsedList.size)
         }
     }
 

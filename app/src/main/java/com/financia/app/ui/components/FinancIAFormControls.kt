@@ -1,6 +1,7 @@
 package com.financia.app.ui.components
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
@@ -14,9 +15,12 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
@@ -29,6 +33,8 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -47,6 +53,9 @@ import androidx.compose.ui.unit.dp
 import com.financia.app.ui.theme.AiPurple
 import com.financia.app.ui.theme.EmeraldDark
 import com.financia.app.ui.theme.EmeraldPrimary
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 /**
  * Caixa de Seleção Dropdown Moderna (abre menu suspenso para selecionar).
@@ -165,7 +174,81 @@ fun FinancIADropdownField(
 }
 
 /**
- * Caixa de Texto Padronizada Premium do FinancIA (cantos arredondados 16.dp, fundo suave, botão limpar).
+ * Caixa de Seleção de Data que abre o Calendário Nativo do Material 3 ao tocar.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun FinancIADatePickerField(
+    label: String,
+    selectedTimestamp: Long,
+    onDateSelected: (Long) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var showDatePicker by remember { mutableStateOf(false) }
+    val dateFormatter = remember { SimpleDateFormat("dd/MM/yyyy", Locale("pt", "BR")) }
+    val formattedDate = remember(selectedTimestamp) {
+        dateFormatter.format(Date(selectedTimestamp))
+    }
+
+    if (showDatePicker) {
+        val datePickerState = rememberDatePickerState(initialSelectedDateMillis = selectedTimestamp)
+        DatePickerDialog(
+            onDismissRequest = { showDatePicker = false },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val chosen = datePickerState.selectedDateMillis ?: selectedTimestamp
+                        onDateSelected(chosen)
+                        showDatePicker = false
+                    }
+                ) {
+                    Text("Confirmar Data")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDatePicker = false }) {
+                    Text("Cancelar")
+                }
+            }
+        ) {
+            DatePicker(state = datePickerState)
+        }
+    }
+
+    Box(modifier = modifier.fillMaxWidth()) {
+        OutlinedTextField(
+            value = formattedDate,
+            onValueChange = {},
+            readOnly = true,
+            singleLine = true,
+            label = { Text(label) },
+            leadingIcon = {
+                Icon(
+                    imageVector = Icons.Default.CalendarMonth,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            },
+            shape = RoundedCornerShape(16.dp),
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f),
+                focusedBorderColor = MaterialTheme.colorScheme.primary,
+                unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.35f)
+            ),
+            modifier = Modifier.fillMaxWidth()
+        )
+        Box(
+            modifier = Modifier
+                .matchParentSize()
+                .clip(RoundedCornerShape(16.dp))
+                .clickable { showDatePicker = true }
+        )
+    }
+}
+
+/**
+ * Caixa de Texto Padronizada Premium do FinancIA.
  */
 @Composable
 fun FinancIATextField(
@@ -238,9 +321,6 @@ fun FinancIATextField(
     )
 }
 
-/**
- * Botão Principal com Gradiente Esmeralda ou Roxo IA e acabamento elevado.
- */
 @Composable
 fun FinancIAPrimaryButton(
     text: String,
@@ -312,9 +392,6 @@ fun FinancIAPrimaryButton(
     }
 }
 
-/**
- * Botão Secundário (Tonal / Outlined moderno com ícone).
- */
 @Composable
 fun FinancIASecondaryButton(
     text: String,

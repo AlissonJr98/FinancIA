@@ -1,5 +1,9 @@
 package com.financia.app.ui.screens
 
+import android.net.Uri
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
@@ -38,7 +42,9 @@ import androidx.compose.material.icons.filled.CreditCard
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.FileDownload
+import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.NotificationsActive
+import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.PieChart
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.Search
@@ -60,7 +66,9 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -77,7 +85,10 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.financia.app.core.export.CsvReportExporter
+import com.financia.app.core.export.PdfReportExporter
 import com.financia.app.core.notifications.BankNotificationService
+import com.financia.app.core.widget.FinancIAWidgetProvider
+import com.financia.app.data.model.BankAccountOption
 import com.financia.app.data.model.FinancialTransaction
 import com.financia.app.data.model.FixedBillTemplate
 import com.financia.app.data.model.LoanContract
@@ -86,6 +97,7 @@ import com.financia.app.data.model.MonthlyBarStat
 import com.financia.app.data.model.SavingsGoal
 import com.financia.app.data.model.TransactionCategory
 import com.financia.app.ui.components.CategoryIconMapper
+import com.financia.app.ui.components.FinancIADatePickerField
 import com.financia.app.ui.components.FinancIADropdownField
 import com.financia.app.ui.components.FinancIATextField
 import com.financia.app.ui.theme.AiPurple
@@ -126,7 +138,8 @@ fun DashboardScreen(
     onOpenSmartAdd: () -> Unit,
     onOpenFixedAndDebts: () -> Unit,
     onConvertCardInvoiceToRenegotiation: (LoanContract) -> Unit,
-    onAskAiCanIBuy: (String) -> Unit
+    onAskAiCanIBuy: (String) -> Unit,
+    onImportStatement: (Uri, String, (Int) -> Unit) -> Unit
 ) {
     val context = LocalContext.current
     val currencyFormatter = remember { NumberFormat.getCurrencyInstance(Locale("pt", "BR")) }
@@ -155,12 +168,32 @@ fun DashboardScreen(
     var showBudgetDialog by remember { mutableStateOf(false) }
     var showRenegotiateCardDialog by remember { mutableStateOf(false) }
     var showCanIBuyDialog by remember { mutableStateOf(false) }
+    var showImportStatementDialog by remember { mutableStateOf(false) }
+    var importAccountName by remember { mutableStateOf(BankAccountOption.NUBANK.label) }
     var editingTransaction by remember { mutableStateOf<FinancialTransaction?>(null) }
     var selectedNatureFilter by remember { mutableStateOf("Todos os Tipos") }
+    var selectedAccountFilter by remember { mutableStateOf("Todas as Contas") }
     var selectedSortOption by remember { mutableStateOf("Mais Recentes") }
+
+    val statementFileLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            onImportStatement(uri, importAccountName) { count ->
+                Toast.makeText(
+                    context,
+                    "Importados $count lançamentos do extrato para $importAccountName!",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+        }
+    }
 
     val categoryDropdownOptions = remember {
         listOf("Todas as Categorias") + TransactionCategory.entries.map { it.label }
+    }
+    val accountDropdownOptions = remember {
+        listOf("Todas as Contas") + BankAccountOption.entries.map { it.label }
     }
     val natureFilterOptions = remember {
         listOf(
@@ -195,6 +228,15 @@ fun DashboardScreen(
         transactions.filter { !it.isIncome }.sumOf { it.amount }
     }
     val balance = totalIncome - totalExpense
+
+    LaunchedEffect(balance, totalIncome, totalExpense) {
+        FinancIAWidgetProvider.saveAndRefreshWidget(
+            context = context,
+            balance = balance,
+            income = totalIncome,
+            expense = totalExpense
+        )
+    }
 
     // Despesas Fixas vs. Dívidas vs. Variáveis (Regra 50-30-20)
     val debtExpense = remember(transactions) {
@@ -246,9 +288,11 @@ fun DashboardScreen(
             .sortedByDescending { it.value }
     }
 
-    val filteredTransactions = remember(transactions, selectedCategory, searchQuery, selectedNatureFilter, selectedSortOption) {
+    val filteredTransactions = remember(transactions, selectedCategory, searchQuery, selectedNatureFilter, selectedAccountFilter, selectedSortOption) {
         val filtered = transactions.filter { tx ->
             val matchesCat = selectedCategory == null || tx.category.equals(selectedCategory, ignoreCase = true)
+            val matchesAccount = selectedAccountFilter == "Todas as Contas" ||
+                tx.accountName.equals(selectedAccountFilter, ignoreCase = true)
             val matchesNature = when (selectedNatureFilter) {
                 "Apenas Receitas (+)" -> tx.isIncome
                 "Apenas Despesas (-)" -> !tx.isIncome
@@ -259,8 +303,9 @@ fun DashboardScreen(
             val matchesQuery = searchQuery.isBlank() ||
                 tx.title.contains(searchQuery, ignoreCase = true) ||
                 tx.category.contains(searchQuery, ignoreCase = true) ||
+                tx.accountName.contains(searchQuery, ignoreCase = true) ||
                 tx.notes.contains(searchQuery, ignoreCase = true)
-            matchesCat && matchesNature && matchesQuery
+            matchesCat && matchesAccount && matchesNature && matchesQuery
         }
         when (selectedSortOption) {
             "Maior Valor (R$)" -> filtered.sortedByDescending { it.amount }
@@ -268,6 +313,43 @@ fun DashboardScreen(
             "Ordem Alfabética (A-Z)" -> filtered.sortedBy { it.title.lowercase() }
             else -> filtered.sortedByDescending { it.dateTimestamp }
         }
+    }
+
+    // Modal de Importar Extrato Bancário (CSV / OFX)
+    if (showImportStatementDialog) {
+        AlertDialog(
+            onDismissRequest = { showImportStatementDialog = false },
+            title = { Text("Importar Extrato Bancário (CSV / OFX)") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        text = "Selecione a Conta/Banco de origem e escolha o arquivo .CSV ou .OFX exportado pelo app do seu banco. O FinancIA categorizará todos os lançamentos automaticamente!",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    FinancIADropdownField(
+                        label = "Conta / Banco do Extrato",
+                        selectedValue = importAccountName,
+                        options = BankAccountOption.entries.map { it.label },
+                        onOptionSelected = { importAccountName = it }
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showImportStatementDialog = false
+                        statementFileLauncher.launch(arrayOf("*/*"))
+                    }
+                ) {
+                    Text("Escolher Arquivo CSV / OFX")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showImportStatementDialog = false }) {
+                    Text("Cancelar")
+                }
+            }
+        )
     }
 
     // --- Modal: Calculadora Inteligente "Posso Comprar?" ---
@@ -491,13 +573,15 @@ fun DashboardScreen(
         )
     }
 
-    // Modal de Edição de Transação
+    // Modal de Edição de Transação (com DatePicker e Seletor de Conta/Banco)
     if (editingTransaction != null) {
         val txToEdit = editingTransaction!!
         var editTitle by remember(txToEdit) { mutableStateOf(txToEdit.title) }
         var editAmount by remember(txToEdit) { mutableStateOf(txToEdit.amount.toString()) }
         var editCategory by remember(txToEdit) { mutableStateOf(txToEdit.category) }
         var editPayment by remember(txToEdit) { mutableStateOf(txToEdit.paymentMethod) }
+        var editAccount by remember(txToEdit) { mutableStateOf(txToEdit.accountName) }
+        var editDateTimestamp by remember(txToEdit) { mutableLongStateOf(txToEdit.dateTimestamp) }
         var editNotes by remember(txToEdit) { mutableStateOf(txToEdit.notes) }
 
         AlertDialog(
@@ -510,13 +594,22 @@ fun DashboardScreen(
                         onValueChange = { editTitle = it },
                         label = "Descrição"
                     )
-                    FinancIATextField(
-                        value = editAmount,
-                        onValueChange = { editAmount = it },
-                        label = "Valor",
-                        prefixText = "R$ ",
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
-                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FinancIATextField(
+                            value = editAmount,
+                            onValueChange = { editAmount = it },
+                            label = "Valor",
+                            prefixText = "R$ ",
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                            modifier = Modifier.weight(1f)
+                        )
+                        FinancIADatePickerField(
+                            label = "Data",
+                            selectedTimestamp = editDateTimestamp,
+                            onDateSelected = { editDateTimestamp = it },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
                     FinancIADropdownField(
                         label = "Categoria",
                         selectedValue = editCategory,
@@ -524,12 +617,22 @@ fun DashboardScreen(
                         onOptionSelected = { editCategory = it },
                         optionIconProvider = { CategoryIconMapper.getIcon(it) }
                     )
-                    FinancIADropdownField(
-                        label = "Forma de Pagamento",
-                        selectedValue = editPayment,
-                        options = listOf("Pix", "Cartão de Crédito", "Cartão de Débito", "Boleto", "Dinheiro"),
-                        onOptionSelected = { editPayment = it }
-                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FinancIADropdownField(
+                            label = "Conta / Banco",
+                            selectedValue = editAccount,
+                            options = BankAccountOption.entries.map { it.label },
+                            onOptionSelected = { editAccount = it },
+                            modifier = Modifier.weight(1f)
+                        )
+                        FinancIADropdownField(
+                            label = "Pagamento",
+                            selectedValue = editPayment,
+                            options = listOf("Pix", "Cartão de Crédito", "Cartão de Débito", "Boleto", "Dinheiro"),
+                            onOptionSelected = { editPayment = it },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
                     FinancIATextField(
                         value = editNotes,
                         onValueChange = { editNotes = it },
@@ -549,6 +652,8 @@ fun DashboardScreen(
                                 amount = newAmt,
                                 category = editCategory.trim(),
                                 paymentMethod = editPayment.trim(),
+                                accountName = editAccount.trim(),
+                                dateTimestamp = editDateTimestamp,
                                 notes = editNotes.trim()
                             )
                         )
@@ -631,44 +736,82 @@ fun DashboardScreen(
             }
         }
 
-        // 2. Seletor de Mês/Ano + Exportar CSV
+        // 2. Seletor de Mês/Ano + Exportar PDF / Excel / Importar Extrato
         item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = onPreviousMonth) {
-                        Icon(Icons.Default.ChevronLeft, contentDescription = "Mês anterior")
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(onClick = onPreviousMonth) {
+                            Icon(Icons.Default.ChevronLeft, contentDescription = "Mês anterior")
+                        }
+                        Text(
+                            text = currentMonthLabel,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        IconButton(onClick = onNextMonth) {
+                            Icon(Icons.Default.ChevronRight, contentDescription = "Próximo mês")
+                        }
                     }
-                    Text(
-                        text = currentMonthLabel,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
-                    )
-                    IconButton(onClick = onNextMonth) {
-                        Icon(Icons.Default.ChevronRight, contentDescription = "Próximo mês")
+
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        AssistChip(
+                            onClick = {
+                                PdfReportExporter.exportAndSharePdf(
+                                    context = context,
+                                    periodLabel = currentMonthLabel,
+                                    transactions = transactions,
+                                    fixedBills = fixedBills,
+                                    loans = loans
+                                )
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Default.PictureAsPdf,
+                                    contentDescription = null,
+                                    tint = ExpenseRed,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            },
+                            label = { Text("PDF", style = MaterialTheme.typography.labelSmall) }
+                        )
+
+                        AssistChip(
+                            onClick = {
+                                CsvReportExporter.exportAndShareCsv(
+                                    context = context,
+                                    transactions = transactions,
+                                    periodLabel = currentMonthLabel
+                                )
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Default.FileDownload,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            },
+                            label = { Text("CSV", style = MaterialTheme.typography.labelSmall) }
+                        )
+
+                        AssistChip(
+                            onClick = { showImportStatementDialog = true },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Default.FileUpload,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            },
+                            label = { Text("Extrato", style = MaterialTheme.typography.labelSmall) }
+                        )
                     }
                 }
-
-                AssistChip(
-                    onClick = {
-                        CsvReportExporter.exportAndShareCsv(
-                            context = context,
-                            transactions = transactions,
-                            periodLabel = currentMonthLabel
-                        )
-                    },
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.Default.FileDownload,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp)
-                        )
-                    },
-                    label = { Text("Excel/CSV", style = MaterialTheme.typography.labelSmall) }
-                )
             }
         }
 
@@ -1375,23 +1518,37 @@ fun DashboardScreen(
                         leadingIcon = Icons.Default.Search
                     )
 
-                    // Caixa de Seleção Dropdown: Categoria
-                    FinancIADropdownField(
-                        label = "Filtrar por Categoria",
-                        selectedValue = selectedCategory ?: "Todas as Categorias",
-                        options = categoryDropdownOptions,
-                        onOptionSelected = { chosen ->
-                            onSelectCategory(if (chosen == "Todas as Categorias") null else chosen)
-                        },
-                        optionIconProvider = { opt ->
-                            if (opt == "Todas as Categorias") Icons.Default.PieChart
-                            else CategoryIconMapper.getIcon(opt)
-                        },
-                        optionColorProvider = { opt ->
-                            if (opt == "Todas as Categorias") EmeraldPrimary
-                            else Color(TransactionCategory.fromLabelOrName(opt).colorHex)
-                        }
-                    )
+                    // Caixa de Seleção Dropdown: Categoria + Conta/Banco
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        FinancIADropdownField(
+                            label = "Categoria",
+                            selectedValue = selectedCategory ?: "Todas as Categorias",
+                            options = categoryDropdownOptions,
+                            onOptionSelected = { chosen ->
+                                onSelectCategory(if (chosen == "Todas as Categorias") null else chosen)
+                            },
+                            optionIconProvider = { opt ->
+                                if (opt == "Todas as Categorias") Icons.Default.PieChart
+                                else CategoryIconMapper.getIcon(opt)
+                            },
+                            optionColorProvider = { opt ->
+                                if (opt == "Todas as Categorias") EmeraldPrimary
+                                else Color(TransactionCategory.fromLabelOrName(opt).colorHex)
+                            },
+                            modifier = Modifier.weight(1.1f)
+                        )
+
+                        FinancIADropdownField(
+                            label = "Conta / Banco",
+                            selectedValue = selectedAccountFilter,
+                            options = accountDropdownOptions,
+                            onOptionSelected = { selectedAccountFilter = it },
+                            modifier = Modifier.weight(0.9f)
+                        )
+                    }
 
                     // Caixas de Seleção Lado a Lado: Tipo (Fixas/Variáveis/Receitas) + Ordenação
                     Row(
@@ -1576,7 +1733,7 @@ private fun TransactionRowCard(
                     else -> "Variável"
                 }
                 Text(
-                    text = "${transaction.category} • $natureTag • ${transaction.paymentMethod}",
+                    text = "${transaction.category} • ${transaction.accountName} • ${transaction.paymentMethod}",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

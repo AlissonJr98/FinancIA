@@ -20,6 +20,21 @@ enum class LoanType(val label: String) {
     PARCELAMENTO_FATURA("Parcelamento de Fatura")
 }
 
+enum class BankAccountOption(val label: String, val colorHex: Long) {
+    NUBANK("Nubank", 0xFF8A05BE),
+    INTER("Banco Inter", 0xFFFF7A00),
+    ITAU("Itaú", 0xFFEC7000),
+    BRADESCO("Bradesco", 0xFFCC092F),
+    SANTANDER("Santander", 0xFFEC0000),
+    BB("Banco do Brasil", 0xFFF8D117),
+    CAIXA("Caixa", 0xFF005CA9),
+    C6("C6 Bank", 0xFF242424),
+    PICPAY("PicPay", 0xFF11C76F),
+    MERCADO_PAGO("Mercado Pago", 0xFF009EE3),
+    CARTEIRA("Carteira / Dinheiro", 0xFF10B981),
+    OUTRA("Outra Conta", 0xFF64748B)
+}
+
 enum class TransactionCategory(
     val label: String,
     val iconName: String,
@@ -62,6 +77,7 @@ data class FinancialTransaction(
     val category: String = TransactionCategory.OUTROS.label,
     val dateTimestamp: Long = System.currentTimeMillis(),
     val paymentMethod: String = "Pix",
+    val accountName: String = BankAccountOption.NUBANK.label,
     val notes: String = "",
     val createdByAi: Boolean = false,
     val isRecurring: Boolean = false,
@@ -94,6 +110,7 @@ data class FinancialTransaction(
             "category" to category.take(80),
             "dateTimestamp" to dateTimestamp,
             "paymentMethod" to paymentMethod.take(60),
+            "accountName" to accountName.ifBlank { BankAccountOption.NUBANK.label }.take(80),
             "notes" to notes.take(500),
             "createdByAi" to createdByAi,
             "isRecurring" to isRecurring,
@@ -217,9 +234,6 @@ data class SavingsGoal(
     }
 }
 
-/**
- * Quem me deve / Valores A Receber (ex: Emprestei cartão ou Pix para um amigo/familiar).
- */
 data class ReceivableItem(
     val id: String = "",
     val personName: String = "",
@@ -243,9 +257,6 @@ data class ReceivableItem(
     }
 }
 
-/**
- * Resumo de barra mensal para o Gráfico Comparativo dos últimos 6 meses.
- */
 data class MonthlyBarStat(
     val monthLabel: String,
     val income: Double,
@@ -263,6 +274,7 @@ data class AiExtractedTransaction(
     val type: String = "EXPENSE",
     val category: String = "Outros",
     val paymentMethod: String = "Pix",
+    val accountName: String = "Nubank",
     val notes: String = "",
     val isRecurring: Boolean = false,
     val installmentCount: Int = 1,
