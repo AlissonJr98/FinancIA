@@ -29,8 +29,49 @@ rules_version = '2';
 //   - createdByAi: bool (optional) - Whether transaction was created via AI assistant
 //   - createdAt: number or timestamp (optional, immutable if present) - Creation timestamp
 //   - isRecurring: bool (optional) - Whether transaction repeats monthly
-//   - installmentCount: int (optional, 1..120) - Total number of installments
-//   - installmentIndex: int (optional, 1..120) - Current installment index (1-based)
+//   - installmentCount: int (optional, 1..480) - Total number of installments
+//   - installmentIndex: int (optional, 1..480) - Current installment index (1-based)
+//   - expenseNature: string (optional, enum: ['FIXED', 'VARIABLE', 'DEBT']) - Expense classification
+//   - fixedBillId: string (optional, <= 128 chars) - Linked fixed bill template ID
+//   - loanId: string (optional, <= 128 chars) - Linked loan/financing ID
+//
+// Subcollection: /users/{userId}/fixedBills/{billId}
+// Document ID: {billId}
+// Fields:
+//   - id: string (optional, <= 128 chars) - Document identifier
+//   - name: string (required, 1-120 chars) - Fixed bill name (e.g., Água, Luz, Internet)
+//   - category: string (required, 1-80 chars) - Expense category
+//   - dueDay: int (required, 1..31) - Day of month bill is due
+//   - defaultAmount: number (required, >= 0) - Base/reference monthly amount
+//   - isFixedValue: bool (required) - Whether value is fixed or variable each month
+//   - monthlyValues: map (optional, <= 240 entries) - Map of YYYY-MM to monthly amount
+//   - paidMonths: map (optional, <= 240 entries) - Map of YYYY-MM to payment status/txId
+//   - createdAt: number or timestamp (optional, immutable if present) - Creation timestamp
+//
+// Subcollection: /users/{userId}/loans/{loanId}
+// Document ID: {loanId}
+// Fields:
+//   - id: string (optional, <= 128 chars) - Document identifier
+//   - title: string (required, 1-150 chars) - Loan/financing title
+//   - loanType: string (required, 1-80 chars) - Loan category/type
+//   - installmentAmount: number (required, > 0) - Monthly installment amount
+//   - totalInstallments: int (required, 1..480) - Total contracted installments
+//   - paidInstallments: int (required, 0..480) - Number of installments already paid
+//   - dueDay: int (required, 1..31) - Monthly due day
+//   - interestRateMonthly: number (optional, >= 0) - Monthly interest rate (%)
+//   - notes: string (optional, <= 500 chars) - Additional contract notes
+//   - lastPaidMonthKey: string (optional, <= 20 chars) - Last paid YYYY-MM key
+//   - createdAt: number or timestamp (optional, immutable if present) - Creation timestamp
+//
+// Subcollection: /users/{userId}/savingsGoals/{goalId}
+// Document ID: {goalId}
+// Fields:
+//   - id: string (optional, <= 128 chars) - Document identifier
+//   - title: string (required, 1-120 chars) - Savings goal / Caixinha title
+//   - targetAmount: number (required, > 0) - Target savings amount
+//   - currentAmount: number (required, >= 0) - Current accumulated amount
+//   - deadlineNote: string (optional, <= 100 chars) - Optional target date or note
+//   - createdAt: number or timestamp (optional, immutable if present) - Creation timestamp
 //
 // Subcollection: /users/{userId}/chatMessages/{messageId}
 // Document ID: {messageId}
@@ -124,7 +165,8 @@ service cloud.firestore {
       let allowedFields = [
         'title', 'amount', 'type', 'category', 'dateTimestamp',
         'id', 'notes', 'paymentMethod', 'createdByAi', 'createdAt',
-        'isRecurring', 'installmentCount', 'installmentIndex'
+        'isRecurring', 'installmentCount', 'installmentIndex',
+        'expenseNature', 'fixedBillId', 'loanId'
       ];
       return hasRequiredFields(requiredFields) &&
         hasOnlyAllowedFields(allowedFields) &&
@@ -139,8 +181,73 @@ service cloud.firestore {
         (!('createdByAi' in data) || data.createdByAi is bool) &&
         (!('createdAt' in data) || isNumberOrTimestamp(data.createdAt)) &&
         (!('isRecurring' in data) || data.isRecurring is bool) &&
-        (!('installmentCount' in data) || (data.installmentCount is int && data.installmentCount >= 1 && data.installmentCount <= 120)) &&
-        (!('installmentIndex' in data) || (data.installmentIndex is int && data.installmentIndex >= 1 && data.installmentIndex <= 120));
+        (!('installmentCount' in data) || (data.installmentCount is int && data.installmentCount >= 1 && data.installmentCount <= 480)) &&
+        (!('installmentIndex' in data) || (data.installmentIndex is int && data.installmentIndex >= 1 && data.installmentIndex <= 480)) &&
+        (!('expenseNature' in data) || (data.expenseNature is string && data.expenseNature in ['FIXED', 'VARIABLE', 'DEBT'])) &&
+        isValidOptionalString('fixedBillId', 0, 128) &&
+        isValidOptionalString('loanId', 0, 128);
+    }
+
+    // Validate Fixed Bill Template document (/users/{userId}/fixedBills/{billId})
+    function isValidFixedBill(data) {
+      let requiredFields = ['name', 'category', 'dueDay', 'defaultAmount', 'isFixedValue'];
+      let allowedFields = [
+        'id', 'name', 'category', 'dueDay', 'defaultAmount',
+        'isFixedValue', 'monthlyValues', 'paidMonths', 'createdAt'
+      ];
+      return hasRequiredFields(requiredFields) &&
+        hasOnlyAllowedFields(allowedFields) &&
+        isValidOptionalString('id', 0, 128) &&
+        validStringLength('name', 1, 120) &&
+        validStringLength('category', 1, 80) &&
+        (data.dueDay is int && data.dueDay >= 1 && data.dueDay <= 31) &&
+        (data.defaultAmount is number && data.defaultAmount >= 0) &&
+        (data.isFixedValue is bool) &&
+        (!('monthlyValues' in data) || (data.monthlyValues is map && data.monthlyValues.size() <= 240)) &&
+        (!('paidMonths' in data) || (data.paidMonths is map && data.paidMonths.size() <= 240)) &&
+        (!('createdAt' in data) || isNumberOrTimestamp(data.createdAt));
+    }
+
+    // Validate Loan / Financing document (/users/{userId}/loans/{loanId})
+    function isValidLoan(data) {
+      let requiredFields = [
+        'title', 'loanType', 'installmentAmount',
+        'totalInstallments', 'paidInstallments', 'dueDay'
+      ];
+      let allowedFields = [
+        'id', 'title', 'loanType', 'installmentAmount',
+        'totalInstallments', 'paidInstallments', 'dueDay',
+        'interestRateMonthly', 'notes', 'lastPaidMonthKey', 'createdAt'
+      ];
+      return hasRequiredFields(requiredFields) &&
+        hasOnlyAllowedFields(allowedFields) &&
+        isValidOptionalString('id', 0, 128) &&
+        validStringLength('title', 1, 150) &&
+        validStringLength('loanType', 1, 80) &&
+        (data.installmentAmount is number && data.installmentAmount > 0) &&
+        (data.totalInstallments is int && data.totalInstallments >= 1 && data.totalInstallments <= 480) &&
+        (data.paidInstallments is int && data.paidInstallments >= 0 && data.paidInstallments <= 480) &&
+        (data.dueDay is int && data.dueDay >= 1 && data.dueDay <= 31) &&
+        (!('interestRateMonthly' in data) || (data.interestRateMonthly is number && data.interestRateMonthly >= 0)) &&
+        isValidOptionalString('notes', 0, 500) &&
+        isValidOptionalString('lastPaidMonthKey', 0, 20) &&
+        (!('createdAt' in data) || isNumberOrTimestamp(data.createdAt));
+    }
+
+    // Validate Savings Goal / Caixinha document (/users/{userId}/savingsGoals/{goalId})
+    function isValidSavingsGoal(data) {
+      let requiredFields = ['title', 'targetAmount', 'currentAmount'];
+      let allowedFields = [
+        'id', 'title', 'targetAmount', 'currentAmount', 'deadlineNote', 'createdAt'
+      ];
+      return hasRequiredFields(requiredFields) &&
+        hasOnlyAllowedFields(allowedFields) &&
+        isValidOptionalString('id', 0, 128) &&
+        validStringLength('title', 1, 120) &&
+        (data.targetAmount is number && data.targetAmount > 0) &&
+        (data.currentAmount is number && data.currentAmount >= 0) &&
+        isValidOptionalString('deadlineNote', 0, 100) &&
+        (!('createdAt' in data) || isNumberOrTimestamp(data.createdAt));
     }
 
     // Validate AI Chat Message document (/users/{userId}/chatMessages/{messageId})
@@ -179,7 +286,46 @@ service cloud.firestore {
         allow delete: if isOwner(userId);
       }
 
-      // 3. User AI Chat History Subcollection
+      // 3. User Fixed Bills Templates Subcollection
+      match /fixedBills/{billId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) &&
+          isValidFixedBill(request.resource.data) &&
+          (!('id' in request.resource.data) || request.resource.data.id == '' || request.resource.data.id == billId);
+        allow update: if isOwner(userId) &&
+          isValidFixedBill(request.resource.data) &&
+          (!('id' in request.resource.data) || request.resource.data.id == '' || request.resource.data.id == billId) &&
+          isImmutableFieldUnchanged('createdAt');
+        allow delete: if isOwner(userId);
+      }
+
+      // 4. User Loans & Financing Subcollection
+      match /loans/{loanId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) &&
+          isValidLoan(request.resource.data) &&
+          (!('id' in request.resource.data) || request.resource.data.id == '' || request.resource.data.id == loanId);
+        allow update: if isOwner(userId) &&
+          isValidLoan(request.resource.data) &&
+          (!('id' in request.resource.data) || request.resource.data.id == '' || request.resource.data.id == loanId) &&
+          isImmutableFieldUnchanged('createdAt');
+        allow delete: if isOwner(userId);
+      }
+
+      // 5. User Savings Goals (Caixinhas) Subcollection
+      match /savingsGoals/{goalId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) &&
+          isValidSavingsGoal(request.resource.data) &&
+          (!('id' in request.resource.data) || request.resource.data.id == '' || request.resource.data.id == goalId);
+        allow update: if isOwner(userId) &&
+          isValidSavingsGoal(request.resource.data) &&
+          (!('id' in request.resource.data) || request.resource.data.id == '' || request.resource.data.id == goalId) &&
+          isImmutableFieldUnchanged('createdAt');
+        allow delete: if isOwner(userId);
+      }
+
+      // 6. User AI Chat History Subcollection
       match /chatMessages/{messageId} {
         allow read: if isOwner(userId);
         allow create: if isOwner(userId) && isValidChatMessage(request.resource.data);
@@ -188,7 +334,7 @@ service cloud.firestore {
       }
     }
 
-    // 4. Default Deny for all other paths
+    // 7. Default Deny for all other paths
     match /{document=**} {
       allow read, write: if false;
     }

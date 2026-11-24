@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ExitToApp
+import androidx.compose.material.icons.filled.AccountBalance
 import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.ChatBubbleOutline
@@ -55,12 +56,14 @@ import com.financia.app.ui.components.UpdateDialog
 import com.financia.app.ui.screens.AdvisorChatScreen
 import com.financia.app.ui.screens.AuthScreen
 import com.financia.app.ui.screens.DashboardScreen
+import com.financia.app.ui.screens.FixedAndDebtsScreen
 import com.financia.app.ui.screens.SmartEntryScreen
 import com.financia.app.ui.theme.FinancIATheme
 import dagger.hilt.android.AndroidEntryPoint
 
 enum class MainTab(val title: String) {
     DASHBOARD("Visão Geral"),
+    FIXED_AND_DEBTS("Fixas & Dívidas"),
     SMART_ADD("Lançar IA"),
     ADVISOR("Consultor IA")
 }
@@ -88,6 +91,9 @@ fun FinancIAAppRoot(
     val currentUser by viewModel.currentUser.collectAsState()
     val uiState by viewModel.uiState.collectAsState()
     val monthTransactions by viewModel.currentMonthTransactions.collectAsState()
+    val fixedBills by viewModel.fixedBills.collectAsState()
+    val loans by viewModel.loans.collectAsState()
+    val savingsGoals by viewModel.savingsGoals.collectAsState()
     val monthlyBudget by viewModel.monthlyBudget.collectAsState()
     val chatMessages by viewModel.chatMessages.collectAsState()
 
@@ -98,7 +104,6 @@ fun FinancIAAppRoot(
         mutableStateOf(!BiometricAuthHelper.isBiometricEnabled(context))
     }
 
-    // Dispara biometria ao abrir o app se estiver ativada e usuário logado
     LaunchedEffect(currentUser, isBiometricEnabled) {
         if (currentUser != null && isBiometricEnabled && !isAppUnlocked) {
             BiometricAuthHelper.showBiometricPrompt(
@@ -109,7 +114,6 @@ fun FinancIAAppRoot(
         }
     }
 
-    // Modal de Atualização Automática OTA via GitHub
     if (uiState.showUpdateDialog && uiState.updateInfo != null) {
         UpdateDialog(
             updateInfo = uiState.updateInfo!!,
@@ -140,7 +144,6 @@ fun FinancIAAppRoot(
         return
     }
 
-    // Tela de Bloqueio Biométrico caso o app esteja trancado
     if (isBiometricEnabled && !isAppUnlocked) {
         Surface(
             modifier = Modifier.fillMaxSize(),
@@ -202,7 +205,6 @@ fun FinancIAAppRoot(
                     )
                 },
                 actions = {
-                    // Botão para Ativar/Desativar Bloqueio Biométrico
                     IconButton(
                         onClick = {
                             if (!BiometricAuthHelper.isBiometricAvailable(context)) {
@@ -236,7 +238,6 @@ fun FinancIAAppRoot(
                         )
                     }
 
-                    // Botão de Atualização Automática OTA
                     IconButton(onClick = { viewModel.checkForGitHubUpdates(silent = false) }) {
                         BadgedBox(
                             badge = {
@@ -273,6 +274,12 @@ fun FinancIAAppRoot(
                     label = { Text("Início") }
                 )
                 NavigationBarItem(
+                    selected = currentTab == MainTab.FIXED_AND_DEBTS,
+                    onClick = { currentTab = MainTab.FIXED_AND_DEBTS },
+                    icon = { Icon(Icons.Default.AccountBalance, contentDescription = null) },
+                    label = { Text("Fixas/Dívidas") }
+                )
+                NavigationBarItem(
                     selected = currentTab == MainTab.SMART_ADD,
                     onClick = { currentTab = MainTab.SMART_ADD },
                     icon = { Icon(Icons.Default.AutoAwesome, contentDescription = null) },
@@ -292,6 +299,8 @@ fun FinancIAAppRoot(
                 MainTab.DASHBOARD -> {
                     DashboardScreen(
                         transactions = monthTransactions,
+                        fixedBills = fixedBills,
+                        loans = loans,
                         selectedMonth = uiState.selectedMonth,
                         selectedYear = uiState.selectedYear,
                         searchQuery = uiState.searchQuery,
@@ -306,7 +315,33 @@ fun FinancIAAppRoot(
                         onSaveMonthlyBudget = viewModel::updateMonthlyBudget,
                         onEditTransaction = viewModel::updateExistingTransaction,
                         onDeleteTransaction = viewModel::deleteTransaction,
-                        onOpenSmartAdd = { currentTab = MainTab.SMART_ADD }
+                        onOpenSmartAdd = { currentTab = MainTab.SMART_ADD },
+                        onOpenFixedAndDebts = { currentTab = MainTab.FIXED_AND_DEBTS },
+                        onConvertCardInvoiceToRenegotiation = viewModel::saveLoanContract
+                    )
+                }
+
+                MainTab.FIXED_AND_DEBTS -> {
+                    FixedAndDebtsScreen(
+                        selectedMonth = uiState.selectedMonth,
+                        selectedYear = uiState.selectedYear,
+                        fixedBills = fixedBills,
+                        loans = loans,
+                        savingsGoals = savingsGoals,
+                        onSaveFixedBill = viewModel::saveFixedBill,
+                        onPayFixedBillForMonth = viewModel::payFixedBillForMonth,
+                        onDeleteFixedBill = viewModel::deleteFixedBill,
+                        onSaveLoanContract = viewModel::saveLoanContract,
+                        onPayOrAmortizeLoan = viewModel::payOrAmortizeLoan,
+                        onDeleteLoanContract = viewModel::deleteLoanContract,
+                        onSaveSavingsGoal = viewModel::saveSavingsGoal,
+                        onDeleteSavingsGoal = viewModel::deleteSavingsGoal,
+                        onSimulatePayoffInAiChat = {
+                            currentTab = MainTab.ADVISOR
+                            viewModel.sendAdvisorMessage(
+                                "Analise meus empréstimos, financiamentos e renegociações ativas e monte um plano estratégico de quitação e amortização (Efeito Bola de Neve vs. Juros) considerando meu saldo e minhas contas fixas."
+                            )
+                        }
                     )
                 }
 

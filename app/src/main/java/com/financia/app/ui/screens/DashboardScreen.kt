@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.CreditCard
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.FileDownload
@@ -36,6 +37,7 @@ import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.filled.WaterDrop
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
@@ -70,6 +72,9 @@ import androidx.compose.ui.unit.dp
 import com.financia.app.core.export.CsvReportExporter
 import com.financia.app.core.notifications.BankNotificationService
 import com.financia.app.data.model.FinancialTransaction
+import com.financia.app.data.model.FixedBillTemplate
+import com.financia.app.data.model.LoanContract
+import com.financia.app.data.model.LoanType
 import com.financia.app.data.model.TransactionCategory
 import com.financia.app.ui.theme.AiPurple
 import com.financia.app.ui.theme.EmeraldDark
@@ -85,6 +90,8 @@ import java.util.Locale
 @Composable
 fun DashboardScreen(
     transactions: List<FinancialTransaction>,
+    fixedBills: List<FixedBillTemplate>,
+    loans: List<LoanContract>,
     selectedMonth: Int,
     selectedYear: Int,
     searchQuery: String,
@@ -99,21 +106,26 @@ fun DashboardScreen(
     onSaveMonthlyBudget: (Double) -> Unit,
     onEditTransaction: (FinancialTransaction) -> Unit,
     onDeleteTransaction: (String) -> Unit,
-    onOpenSmartAdd: () -> Unit
+    onOpenSmartAdd: () -> Unit,
+    onOpenFixedAndDebts: () -> Unit,
+    onConvertCardInvoiceToRenegotiation: (LoanContract) -> Unit
 ) {
     val context = LocalContext.current
     val currencyFormatter = remember { NumberFormat.getCurrencyInstance(Locale("pt", "BR")) }
     val dateFormatter = remember { SimpleDateFormat("dd/MM/yyyy • HH:mm", Locale("pt", "BR")) }
 
-    val monthNames = remember {
-        DateFormatSymbols(Locale("pt", "BR")).months
+    val monthKey = remember(selectedMonth, selectedYear) {
+        String.format(Locale.US, "%04d-%02d", selectedYear, selectedMonth + 1)
     }
+
+    val monthNames = remember { DateFormatSymbols(Locale("pt", "BR")).months }
     val currentMonthLabel = remember(selectedMonth, selectedYear) {
         val rawMonth = monthNames.getOrElse(selectedMonth) { "Mês" }
         "${rawMonth.replaceFirstChar { it.titlecase(Locale("pt", "BR")) }} $selectedYear"
     }
 
     var showBudgetDialog by remember { mutableStateOf(false) }
+    var showRenegotiateCardDialog by remember { mutableStateOf(false) }
     var editingTransaction by remember { mutableStateOf<FinancialTransaction?>(null) }
     val isNotificationAccessEnabled = remember(transactions) {
         BankNotificationService.isNotificationListenerEnabled(context)
@@ -130,6 +142,29 @@ fun DashboardScreen(
         transactions.filter { !it.isIncome }.sumOf { it.amount }
     }
     val balance = totalIncome - totalExpense
+
+    // Despesas Fixas/Dívidas vs. Despesas Variáveis
+    val fixedAndDebtExpense = remember(transactions) {
+        transactions.filter { !it.isIncome && it.isFixedOrDebt }.sumOf { it.amount }
+    }
+    val variableExpense = remember(totalExpense, fixedAndDebtExpense) {
+        (totalExpense - fixedAndDebtExpense).coerceAtLeast(0.0)
+    }
+
+    // Fatura do Cartão de Crédito do Mês
+    val creditCardTotal = remember(transactions) {
+        transactions.filter {
+            !it.isIncome && it.paymentMethod.contains("Crédito", ignoreCase = true)
+        }.sumOf { it.amount }
+    }
+
+    // Contas Fixas Pendentes e Parcelas de Empréstimo Pendentes no Mês
+    val pendingFixedBillsCount = remember(fixedBills, monthKey) {
+        fixedBills.count { !it.isPaidInMonth(monthKey) }
+    }
+    val pendingLoansCount = remember(loans, monthKey) {
+        loans.count { it.remainingInstallments > 0 && !it.isPaidInMonth(monthKey) }
+    }
 
     // Score de Saúde Financeira (0 a 100)
     val healthScore = remember(totalIncome, totalExpense, monthlyBudget) {
@@ -163,6 +198,88 @@ fun DashboardScreen(
                 tx.notes.contains(searchQuery, ignoreCase = true)
             matchesCat && matchesQuery
         }
+    }
+
+    // Modal de Renegociação / Parcelamento da Fatura do Cartão
+    if (showRenegotiateCardDialog) {
+        var cardName by remember { mutableStateOf("Renegociação Fatura Cartão ($currentMonthLabel)") }
+        var instValueText by remember { mutableStateOf(((creditCardTotal / 12.0).toInt()).toString()) }
+        var countText by remember { mutableStateOf("12") }
+        var dueDayText by remember { mutableStateOf("10") }
+
+        AlertDialog(
+            onDismissRequest = { showRenegotiateCardDialog = false },
+            title = { Text("Parcelar / Renegociar Fatura do Cartão") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "Transforme a fatura atual (${currencyFormatter.format(creditCardTotal)}) em um contrato de parcelamento ou renegociação na aba 'Fixas & Dívidas':",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    OutlinedTextField(
+                        value = cardName,
+                        onValueChange = { cardName = it },
+                        label = { Text("Descrição do Acordo / Fatura") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = countText,
+                        onValueChange = { countText = it },
+                        label = { Text("Número de Parcelas (ex: 12, 24, 36)") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = instValueText,
+                        onValueChange = { instValueText = it },
+                        label = { Text("Valor Fixo da Parcela Mensal (R$)") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = dueDayText,
+                        onValueChange = { dueDayText = it },
+                        label = { Text("Dia do Vencimento") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val instAmt = instValueText.replace(",", ".").toDoubleOrNull() ?: 0.0
+                        val total = countText.toIntOrNull()?.coerceIn(1, 360) ?: 12
+                        val day = dueDayText.toIntOrNull()?.coerceIn(1, 31) ?: 10
+                        if (cardName.isNotBlank() && instAmt > 0.0) {
+                            onConvertCardInvoiceToRenegotiation(
+                                LoanContract(
+                                    title = cardName.trim(),
+                                    loanType = LoanType.RENEGOCIACAO_CARTAO.label,
+                                    installmentAmount = instAmt,
+                                    totalInstallments = total,
+                                    paidInstallments = 0,
+                                    dueDay = day
+                                )
+                            )
+                            showRenegotiateCardDialog = false
+                            onOpenFixedAndDebts()
+                        }
+                    }
+                ) {
+                    Text("Criar Renegociação")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showRenegotiateCardDialog = false }) {
+                    Text("Cancelar")
+                }
+            }
+        )
     }
 
     // Modal de Meta de Orçamento Mensal
@@ -394,6 +511,166 @@ fun DashboardScreen(
             }
         }
 
+        // Termômetro: Despesas Fixas & Empréstimos vs. Despesas Variáveis + Atalho Contas Fixas
+        item {
+            Card(
+                onClick = onOpenFixedAndDebts,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(18.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.WaterDrop,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "Despesas Fixas & Dívidas vs. Variáveis",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column {
+                            Text(
+                                text = "Fixas + Empréstimos",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                text = formatMoney(fixedAndDebtExpense),
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF8B5CF6)
+                            )
+                        }
+                        Column(horizontalAlignment = Alignment.End) {
+                            Text(
+                                text = "Variáveis (Dia a dia)",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                text = formatMoney(variableExpense),
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFFF97316)
+                            )
+                        }
+                    }
+
+                    val fixedRatio = if (totalExpense > 0) (fixedAndDebtExpense / totalExpense).toFloat().coerceIn(0f, 1f) else 0.5f
+                    LinearProgressIndicator(
+                        progress = { fixedRatio },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(8.dp)
+                            .clip(RoundedCornerShape(4.dp)),
+                        color = Color(0xFF8B5CF6),
+                        trackColor = Color(0xFFF97316).copy(alpha = 0.35f)
+                    )
+
+                    val alertText = buildString {
+                        if (pendingFixedBillsCount > 0) {
+                            append("⏳ $pendingFixedBillsCount conta(s) fixa(s) aguardando valor do mês (Água/Luz...) ")
+                        }
+                        if (pendingLoansCount > 0) {
+                            append("• $pendingLoansCount parcela(s) de empréstimo/renegociação em aberto")
+                        }
+                        if (isEmpty()) {
+                            append("Toque para gerenciar Contas Fixas (Água/Luz), Empréstimos, Financiamentos e Renegociações")
+                        }
+                    }
+                    Text(
+                        text = alertText,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+            }
+        }
+
+        // Card de Fatura do Cartão de Crédito (com opção de Renegociar / Parcelar Fatura)
+        if (creditCardTotal > 0.0) {
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(18.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(0xFFD97706).copy(alpha = 0.15f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.CreditCard,
+                                    contentDescription = null,
+                                    tint = Color(0xFFD97706)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column {
+                                Text(
+                                    text = "Fatura Cartão de Crédito",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = formatMoney(creditCardTotal),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = ExpenseRed
+                                )
+                            }
+                        }
+
+                        OutlinedButton(
+                            onClick = { showRenegotiateCardDialog = true },
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Text("Renegociar / Parcelar", style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
+                }
+            }
+        }
+
         // Card de Meta de Orçamento Mensal + Score de Saúde Financeira IA
         item {
             Card(
@@ -559,7 +836,6 @@ fun DashboardScreen(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(16.dp)
                         ) {
-                            // Donut Chart em Compose Canvas
                             Box(
                                 modifier = Modifier.size(120.dp),
                                 contentAlignment = Alignment.Center
@@ -691,7 +967,7 @@ fun DashboardScreen(
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = "Use a aba 'Lançar IA' ou peça diretamente no chat do Consultor para adicionar gastos.",
+                            text = "Use a aba 'Fixas & Dívidas' para cadastrar Água, Luz e Empréstimos, ou 'Lançar IA' para gastos do dia a dia.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -808,18 +1084,24 @@ private fun TransactionRowCard(
                             modifier = Modifier.size(14.dp)
                         )
                     }
-                    if (transaction.isRecurring) {
+                    if (transaction.isFixedOrDebt) {
                         Spacer(modifier = Modifier.width(4.dp))
                         Icon(
                             imageVector = Icons.Default.Repeat,
-                            contentDescription = "Gasto Fixo Mensal",
+                            contentDescription = "Despesa Fixa ou Parcela",
                             tint = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.size(14.dp)
                         )
                     }
                 }
+                val natureTag = when {
+                    transaction.isIncome -> "Receita"
+                    transaction.expenseNature == "DEBT" -> "Empréstimo/Dívida"
+                    transaction.isFixedOrDebt -> "Despesa Fixa"
+                    else -> "Variável"
+                }
                 Text(
-                    text = "${transaction.category} • ${transaction.paymentMethod}",
+                    text = "${transaction.category} • $natureTag • ${transaction.paymentMethod}",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

@@ -1,7 +1,7 @@
 {
-  "versionCode": 3,
-  "versionName": "1.1.1",
-  "title": "FinancIA v1.1.1 — Atualização Oficial",
-  "notes": "• Login oficial com Conta Google (1 toque)\n• Captura Automática de Notificações Bancárias (Nubank, Inter, Itaú, Santander, C6, PicPay, BB, Caixa...)\n• Function Calling no Chat IA: peça para o consultor registrar vários gastos direto na conversa\n• Gráfico de Rosca (Donut Chart), Score de Saúde Financeira (0-100) e Meta de Orçamento Mensal\n• Filtro por Mês/Ano, Busca, Edição de Lançamentos, Gastos Fixos e Parcelamento automático\n• Modo Privacidade (ocultar saldo), Proteção por Biometria/Digital e Exportação Excel/CSV\n• Assinatura unificada do pacote APK para atualizações diretas sem conflito",
-  "apkUrl": "https://github.com/AlissonJr98/FinancIA/releases/download/v1.1.1/FinancIA.apk"
+  "versionCode": 4,
+  "versionName": "1.2.0",
+  "title": "FinancIA v1.2.0 — Contas Fixas (Água/Luz), Empréstimos Longos & Renegociação",
+  "notes": "• Nova aba 'Fixas & Dívidas': cadastre contas fixas (Água, Luz, Internet, Aluguel) uma vez e informe apenas o valor que veio naquele mês (com comparativo de média)\n• Central de Empréstimos, Financiamentos Longos (até 360x) e Renegociação de Cartão com progresso de parcelas, saldo devedor e botão de Amortização\n• Simulador de Quitação de Dívidas com Gemini IA (Efeito Bola de Neve)\n• Separação visual de Despesas Fixas/Dívidas vs. Despesas Variáveis no Dashboard\n• Card da Fatura do Cartão com opção de Renegociar/Parcelar + Caixinhas de Economia",
+  "apkUrl": "https://github.com/AlissonJr98/FinancIA/releases/download/v1.2.0/FinancIA.apk"
 }

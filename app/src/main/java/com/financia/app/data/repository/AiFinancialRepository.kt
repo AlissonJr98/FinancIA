@@ -3,7 +3,10 @@ package com.financia.app.data.repository
 import android.graphics.Bitmap
 import com.financia.app.data.model.AiChatActionResponse
 import com.financia.app.data.model.AiExtractedTransaction
+import com.financia.app.data.model.ExpenseNature
 import com.financia.app.data.model.FinancialTransaction
+import com.financia.app.data.model.FixedBillTemplate
+import com.financia.app.data.model.LoanContract
 import com.financia.app.data.model.TransactionCategory
 import com.google.firebase.ai.FirebaseAI
 import com.google.firebase.ai.type.content
@@ -35,21 +38,21 @@ class AiFinancialRepository @Inject constructor(
         Sua tarefa é extrair informações estruturadas de uma transação financeira descrita pelo usuário (por texto, voz, imagem de comprovante ou notificação bancária).
         Responda APENAS com um objeto JSON válido (sem blocos markdown ```json) com exatamente estas chaves:
         {
-          "title": "Nome curto e claro do gasto ou receita (ex: Supermercado Extra, Uber, Salário)",
+          "title": "Nome curto e claro do gasto ou receita (ex: Supermercado Extra, Conta de Água, Parcela Financiamento Moto)",
           "amount": 45.90,
           "type": "EXPENSE" ou "INCOME",
           "category": "Uma das categorias permitidas: $availableCategories",
           "paymentMethod": "Pix, Cartão de Crédito, Cartão de Débito, Dinheiro ou Boleto",
           "notes": "Resumo ou observação adicional extraída",
           "isRecurring": false,
-          "installmentCount": 1
+          "installmentCount": 1,
+          "expenseNature": "FIXED", "VARIABLE" ou "DEBT"
         }
         Regras:
-        - Se o usuário disser 'gastei', 'paguei', 'comprei', 'compra aprovada', 'pix enviado', type deve ser "EXPENSE".
-        - Se o usuário disser 'recebi', 'ganhei', 'salário', 'pix recebido', 'transferência recebida', type deve ser "INCOME".
-        - Se mencionar 'parcelado em X vezes' ou 'Xx', preencha installmentCount com X (ex: 3) e amount com o valor TOTAL da compra.
-        - Se mencionar 'fixo', 'mensal', 'assinatura', 'todo mês', preencha isRecurring = true.
-        - Escolha sempre a categoria mais adequada da lista: $availableCategories.
+        - Se for conta fixa mensal (Água, Luz, Energia, Internet, Aluguel, Condomínio, Gás, Assinatura), use expenseNature = "FIXED".
+        - Se for empréstimo, financiamento (carro, moto, casa), renegociação de cartão ou parcelamento de fatura, use expenseNature = "DEBT" e a categoria correspondente ("Empréstimos & Financiamentos" ou "Renegociação / Cartão").
+        - Para gastos do dia a dia (Mercado, Uber, Lazer, Compras), use expenseNature = "VARIABLE".
+        - Se mencionar 'parcelado em X vezes' ou 'Xx' (até 360x), preencha installmentCount com X e amount com o valor TOTAL.
     """.trimIndent()
 
     suspend fun parseNaturalLanguageTransaction(userInput: String): Result<AiExtractedTransaction> = runCatching {
@@ -83,7 +86,7 @@ class AiFinancialRepository @Inject constructor(
 
         val promptText = buildString {
             appendLine(extractionSystemPrompt)
-            appendLine("Analise a imagem deste comprovante, cupom fiscal ou recibo e extraia o estabelecimento (title), valor total pago (amount), categoria sugerida (category), forma de pagamento (paymentMethod) e itens principais em notes.")
+            appendLine("Analise a imagem deste comprovante, boleto de água/luz/empréstimo ou cupom fiscal e extraia o estabelecimento/conta (title), valor total pago (amount), categoria sugerida (category), natureza (FIXED, VARIABLE ou DEBT), forma de pagamento (paymentMethod) e detalhes em notes.")
             if (optionalHint.isNotBlank()) {
                 appendLine("Observação do usuário: $optionalHint")
             }
@@ -117,18 +120,30 @@ class AiFinancialRepository @Inject constructor(
     }
 
     /**
-     * Consultor Financeiro com Function Calling via Structured Output JSON:
-     * Responde dúvidas financeiras E TAMBÉM registra múltiplos lançamentos se o usuário pedir no chat!
+     * Consultor Financeiro & Simulador de Quitação de Dívidas (Efeito Bola de Neve / Avalanche):
+     * Analisa transações, contas fixas (Água/Luz) e contratos de empréstimos/renegociações.
      */
     suspend fun askFinancialAdvisorWithActions(
         userQuestion: String,
         transactions: List<FinancialTransaction>,
+        fixedBills: List<FixedBillTemplate>,
+        loans: List<LoanContract>,
         monthlyBudget: Double
     ): Result<AiChatActionResponse> = runCatching {
         val brlFormat = NumberFormat.getCurrencyInstance(Locale("pt", "BR"))
         val totalIncome = transactions.filter { it.isIncome }.sumOf { it.amount }
         val totalExpense = transactions.filter { !it.isIncome }.sumOf { it.amount }
+        val fixedAndDebtExpense = transactions.filter { !it.isIncome && it.isFixedOrDebt }.sumOf { it.amount }
+        val variableExpense = (totalExpense - fixedAndDebtExpense).coerceAtLeast(0.0)
         val balance = totalIncome - totalExpense
+
+        val loansSummary = loans.joinToString("\n") { loan ->
+            "• ${loan.title} [${loan.loanType}]: Parcela ${brlFormat.format(loan.installmentAmount)} (${loan.paidInstallments}/${loan.totalInstallments} pagas, restam ${loan.remainingInstallments}x = Saldo Devedor ${brlFormat.format(loan.remainingBalance)}, Juros: ${loan.interestRateMonthly}% a.m.)"
+        }.ifBlank { "Nenhum empréstimo, financiamento ou renegociação ativa." }
+
+        val fixedBillsSummary = fixedBills.joinToString("\n") { bill ->
+            "• ${bill.name} (Vence dia ${bill.dueDay}): Valor base/médio ${brlFormat.format(bill.defaultAmount)}"
+        }.ifBlank { "Nenhuma conta fixa cadastrada." }
 
         val expensesByCategory = transactions
             .filter { !it.isIncome }
@@ -139,11 +154,6 @@ class AiFinancialRepository @Inject constructor(
             .joinToString("\n") { (cat, sum) -> "- $cat: ${brlFormat.format(sum)}" }
             .ifBlank { "Nenhuma despesa registrada neste período." }
 
-        val recentTxSummary = transactions.take(20).joinToString("\n") { tx ->
-            val sign = if (tx.isIncome) "+" else "-"
-            "• ${tx.title} (${tx.category}): $sign ${brlFormat.format(tx.amount)} [${tx.paymentMethod}]"
-        }.ifBlank { "Nenhuma transação recente." }
-
         val model = firebaseAi.generativeModel(
             modelName = MODEL_NAME,
             generationConfig = generationConfig {
@@ -153,10 +163,10 @@ class AiFinancialRepository @Inject constructor(
         )
 
         val fullPrompt = """
-            Você é o FinancIA, um consultor financeiro pessoal inteligente e assistente de ações no Brasil.
+            Você é o FinancIA, um consultor financeiro pessoal especialista em orçamento doméstico, contas fixas vs. variáveis e quitação inteligente de empréstimos, financiamentos e renegociações de cartão no Brasil.
             Responda APENAS com um objeto JSON válido no formato abaixo:
             {
-              "reply": "Sua resposta amigável e detalhada em Português (pt-BR). Se você criou transações, confirme os valores registrados aqui!",
+              "reply": "Sua resposta amigável e estratégica em Português (pt-BR).",
               "transactionsToCreate": [
                 {
                   "title": "Descrição",
@@ -166,25 +176,26 @@ class AiFinancialRepository @Inject constructor(
                   "paymentMethod": "Pix, Cartão de Crédito, Cartão de Débito, Dinheiro ou Boleto",
                   "notes": "Criado via Chat IA",
                   "isRecurring": false,
-                  "installmentCount": 1
+                  "installmentCount": 1,
+                  "expenseNature": "FIXED", "VARIABLE" ou "DEBT"
                 }
               ]
             }
-            Regras de Function Calling:
-            - Se o usuário pedir para registrar, lançar ou anotar um ou mais gastos/receitas durante a conversa (ex: "Registra aí que gastei 30 na padaria e 150 de gasolina"), inclua TODOS eles na lista `transactionsToCreate` e confirme no `reply`.
-            - Se o usuário estiver apenas fazendo uma pergunta ou pedindo dicas, deixe `transactionsToCreate` como uma lista vazia `[]`.
 
             === CONTEXTO FINANCEIRO DO PERÍODO ===
-            • Saldo: ${brlFormat.format(balance)}
+            • Saldo Disponível: ${brlFormat.format(balance)}
             • Receitas: ${brlFormat.format(totalIncome)}
-            • Despesas: ${brlFormat.format(totalExpense)}
+            • Total Despesas: ${brlFormat.format(totalExpense)} (Fixas/Dívidas: ${brlFormat.format(fixedAndDebtExpense)} | Variáveis: ${brlFormat.format(variableExpense)})
             • Meta de Orçamento Mensal: ${if (monthlyBudget > 0) brlFormat.format(monthlyBudget) else "Não definida"}
+
+            === EMPRÉSTIMOS, FINANCIAMENTOS E RENEGOCIAÇÕES ATIVAS ===
+            $loansSummary
+
+            === MOLDES DE CONTAS FIXAS MENSAIS (ÁGUA, LUZ, INTERNET...) ===
+            $fixedBillsSummary
 
             === DESPESAS POR CATEGORIA ===
             $expensesByCategory
-
-            === ÚLTIMAS TRANSAÇÕES ===
-            $recentTxSummary
 
             === MENSAGEM DO USUÁRIO ===
             $userQuestion
@@ -216,13 +227,19 @@ class AiFinancialRepository @Inject constructor(
             .trim()
         return runCatching {
             val parsed = json.decodeFromString<AiExtractedTransaction>(cleaned)
-            val validCategory = TransactionCategory.fromLabelOrName(parsed.category).label
+            val catEnum = TransactionCategory.fromLabelOrName(parsed.category)
             val normalizedType = if (parsed.type.uppercase() == "INCOME") "INCOME" else "EXPENSE"
+            val nature = when (parsed.expenseNature.uppercase()) {
+                "FIXED" -> ExpenseNature.FIXED.name
+                "DEBT" -> ExpenseNature.DEBT.name
+                else -> catEnum.defaultNature.name
+            }
             parsed.copy(
                 title = parsed.title.ifBlank { fallbackInput.take(40) },
-                category = validCategory,
+                category = catEnum.label,
                 type = normalizedType,
-                installmentCount = parsed.installmentCount.coerceIn(1, 48)
+                installmentCount = parsed.installmentCount.coerceIn(1, 360),
+                expenseNature = nature
             )
         }.getOrElse {
             fallbackHeuristicParse(fallbackInput)
@@ -231,9 +248,9 @@ class AiFinancialRepository @Inject constructor(
 
     fun fallbackHeuristicParse(input: String): AiExtractedTransaction {
         val lower = input.lowercase()
-        val installmentRegex = Regex("""(\d{1,2})\s*(?:x|vezes|parcelas)""", RegexOption.IGNORE_CASE)
+        val installmentRegex = Regex("""(\d{1,3})\s*(?:x|vezes|parcelas)""", RegexOption.IGNORE_CASE)
         val installmentMatch = installmentRegex.find(input)
-        val installmentCount = installmentMatch?.groupValues?.getOrNull(1)?.toIntOrNull()?.coerceIn(1, 48) ?: 1
+        val installmentCount = installmentMatch?.groupValues?.getOrNull(1)?.toIntOrNull()?.coerceIn(1, 360) ?: 1
 
         val textWithoutInstallments = if (installmentMatch != null) {
             input.removeRange(installmentMatch.range)
@@ -247,16 +264,23 @@ class AiFinancialRepository @Inject constructor(
         val isIncome = listOf("recebi", "ganhei", "salário", "salario", "renda", "freela", "dividendo", "pix recebido", "transferência recebida")
             .any { lower.contains(it) }
 
-        val isRecurring = listOf("fixo", "mensal", "todo mês", "assinatura", "aluguel", "condomínio", "internet")
+        val isDebt = listOf("empréstimo", "emprestimo", "financiamento", "consignado", "renegociação", "renegociacao", "acordo", "parcelamento de fatura")
+            .any { lower.contains(it) }
+
+        val isFixedBill = listOf("água", "agua", "luz", "energia", "internet", "aluguel", "condomínio", "condominio", "gás", "gas", "iptu", "fixo", "mensal")
             .any { lower.contains(it) }
 
         val category = when {
+            listOf("renegociação", "renegociacao", "acordo", "fatura").any { lower.contains(it) } ->
+                TransactionCategory.RENEGOCIACAO.label
+            listOf("empréstimo", "emprestimo", "financiamento", "consignado", "prestação", "prestacao").any { lower.contains(it) } ->
+                TransactionCategory.EMPRESTIMOS.label
+            listOf("água", "agua", "luz", "energia", "internet", "aluguel", "condomínio", "condominio", "gás", "iptu").any { lower.contains(it) } ->
+                TransactionCategory.MORADIA.label
             listOf("mercado", "ifood", "restaurante", "lanche", "padaria", "almoço", "jantar", "café", "supermercado", "burger", "pizza").any { lower.contains(it) } ->
                 TransactionCategory.ALIMENTACAO.label
             listOf("uber", "99", "gasolina", "combustível", "ônibus", "metrô", "estacionamento", "posto", "pedágio").any { lower.contains(it) } ->
                 TransactionCategory.TRANSPORTE.label
-            listOf("aluguel", "luz", "água", "internet", "condomínio", "energia", "gás", "iptu").any { lower.contains(it) } ->
-                TransactionCategory.MORADIA.label
             listOf("farmácia", "médico", "consulta", "exame", "academia", "remédio", "drogaria").any { lower.contains(it) } ->
                 TransactionCategory.SAUDE.label
             listOf("netflix", "spotify", "assinatura", "prime", "youtube", "icloud", "hbo").any { lower.contains(it) } ->
@@ -274,11 +298,17 @@ class AiFinancialRepository @Inject constructor(
             else -> TransactionCategory.OUTROS.label
         }
 
+        val expenseNature = when {
+            isDebt -> ExpenseNature.DEBT.name
+            isFixedBill -> ExpenseNature.FIXED.name
+            else -> ExpenseNature.VARIABLE.name
+        }
+
         val paymentMethod = when {
-            installmentCount > 1 || lower.contains("crédito") || lower.contains("credito") || lower.contains("cartão") -> "Cartão de Crédito"
+            installmentCount > 1 && !isDebt || lower.contains("crédito") || lower.contains("credito") || lower.contains("cartão") -> "Cartão de Crédito"
+            isDebt || isFixedBill || lower.contains("boleto") -> "Boleto"
             lower.contains("débito") || lower.contains("debito") -> "Cartão de Débito"
             lower.contains("dinheiro") -> "Dinheiro"
-            lower.contains("boleto") -> "Boleto"
             else -> "Pix"
         }
 
@@ -297,8 +327,9 @@ class AiFinancialRepository @Inject constructor(
             category = category,
             paymentMethod = paymentMethod,
             notes = "Extraído de: \"$input\"",
-            isRecurring = isRecurring,
-            installmentCount = installmentCount
+            isRecurring = isFixedBill,
+            installmentCount = installmentCount,
+            expenseNature = expenseNature
         )
     }
 }

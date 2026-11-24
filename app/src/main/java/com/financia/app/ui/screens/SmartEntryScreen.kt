@@ -44,7 +44,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -61,6 +60,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.financia.app.data.model.AiExtractedTransaction
+import com.financia.app.data.model.ExpenseNature
 import com.financia.app.data.model.TransactionCategory
 import com.financia.app.ui.theme.AiPurple
 
@@ -82,7 +82,8 @@ fun SmartEntryScreen(
         notes: String,
         createdByAi: Boolean,
         isRecurring: Boolean,
-        installmentCount: Int
+        installmentCount: Int,
+        expenseNature: String
     ) -> Unit,
     onTransactionSavedNavigateHome: () -> Unit
 ) {
@@ -95,8 +96,9 @@ fun SmartEntryScreen(
     var selectedCategory by remember { mutableStateOf(TransactionCategory.ALIMENTACAO.label) }
     var selectedPayment by remember { mutableStateOf("Pix") }
     var notes by remember { mutableStateOf("") }
-    var isRecurring by remember { mutableStateOf(false) }
+    var selectedNature by remember { mutableStateOf(ExpenseNature.VARIABLE) }
     var installmentCount by remember { mutableIntStateOf(1) }
+    var customInstallmentText by remember { mutableStateOf("1") }
     var wasPopulatedByAi by remember { mutableStateOf(false) }
 
     LaunchedEffect(pendingAiDraft) {
@@ -107,8 +109,11 @@ fun SmartEntryScreen(
             selectedCategory = pendingAiDraft.category
             selectedPayment = pendingAiDraft.paymentMethod
             notes = pendingAiDraft.notes
-            isRecurring = pendingAiDraft.isRecurring
-            installmentCount = pendingAiDraft.installmentCount.coerceIn(1, 48)
+            selectedNature = runCatching {
+                ExpenseNature.valueOf(pendingAiDraft.expenseNature)
+            }.getOrDefault(if (pendingAiDraft.isRecurring) ExpenseNature.FIXED else ExpenseNature.VARIABLE)
+            installmentCount = pendingAiDraft.installmentCount.coerceIn(1, 360)
+            customInstallmentText = installmentCount.toString()
             wasPopulatedByAi = true
         }
     }
@@ -151,8 +156,8 @@ fun SmartEntryScreen(
         }
     }
 
-    val paymentMethods = listOf("Pix", "Cartão de Crédito", "Cartão de Débito", "Dinheiro", "Boleto")
-    val installmentOptions = listOf(1, 2, 3, 4, 5, 6, 10, 12)
+    val paymentMethods = listOf("Pix", "Cartão de Crédito", "Cartão de Débito", "Boleto", "Dinheiro")
+    val quickInstallments = listOf(1, 2, 3, 6, 10, 12, 24, 36, 48, 60)
 
     Column(
         modifier = Modifier
@@ -190,7 +195,7 @@ fun SmartEntryScreen(
                 }
 
                 Text(
-                    text = "Descreva seu gasto/receita, parcelamento ou gasto fixo, use o microfone ou tire foto do comprovante.",
+                    text = "Descreva seu gasto variável, conta fixa (água/luz), empréstimo ou renegociação, fale no microfone ou fotografe a conta.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -198,7 +203,7 @@ fun SmartEntryScreen(
                 OutlinedTextField(
                     value = naturalInput,
                     onValueChange = { naturalInput = it },
-                    label = { Text("Ex: Tênis 300 em 3x no cartão / Gastei 45 no mercado") },
+                    label = { Text("Ex: Conta de água 78,50 / Financiamento 18000 em 48x") },
                     modifier = Modifier.fillMaxWidth(),
                     maxLines = 3
                 )
@@ -210,9 +215,9 @@ fun SmartEntryScreen(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     val samples = listOf(
+                        "Conta de Água deste mês 84,90",
+                        "Renegociação cartão 2400 em 24x",
                         "Gastei 45 no mercado no Pix",
-                        "Comprei fone 240 em 3x no cartão",
-                        "Internet fixa mensal 120",
                         "Recebi 3500 de salário"
                     )
                     samples.forEach { sample ->
@@ -297,7 +302,7 @@ fun SmartEntryScreen(
             }
         }
 
-        // Bloco 2: Dados do Lançamento + Recorrência + Parcelamento
+        // Bloco 2: Dados do Lançamento + Fixa vs Variável vs Empréstimo + Parcelas Longas
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(20.dp),
@@ -334,16 +339,44 @@ fun SmartEntryScreen(
                     )
                 }
 
+                // Classificação: Despesa Variável vs. Conta Fixa vs. Empréstimo/Financiamento
+                if (!isIncome) {
+                    Text(
+                        text = "Tipo de Despesa (Fixa, Variável ou Empréstimo/Dívida)",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        ExpenseNature.entries.forEach { nature ->
+                            FilterChip(
+                                selected = selectedNature == nature,
+                                onClick = {
+                                    selectedNature = nature
+                                    if (nature == ExpenseNature.DEBT &&
+                                        selectedCategory != TransactionCategory.EMPRESTIMOS.label &&
+                                        selectedCategory != TransactionCategory.RENEGOCIACAO.label
+                                    ) {
+                                        selectedCategory = TransactionCategory.EMPRESTIMOS.label
+                                    }
+                                },
+                                label = { Text(nature.label) },
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                    }
+                }
+
                 OutlinedTextField(
                     value = title,
                     onValueChange = { title = it },
-                    label = { Text("Descrição (ex: Mercado, Uber, Salário)") },
+                    label = { Text("Descrição (ex: Água, Financiamento, Mercado)") },
                     trailingIcon = {
                         if (title.length >= 3) {
                             TextButton(
                                 onClick = {
                                     onAutoCategorize(title) { suggested ->
                                         selectedCategory = suggested.label
+                                        selectedNature = suggested.defaultNature
                                         if (suggested.isIncomeDefault) isIncome = true
                                     }
                                 }
@@ -368,7 +401,7 @@ fun SmartEntryScreen(
                     onValueChange = { amountText = it },
                     label = {
                         Text(
-                            if (installmentCount > 1) "Valor Total da Compra (R$) - será dividido em ${installmentCount}x"
+                            if (installmentCount > 1) "Valor Total (R$) - será dividido em ${installmentCount}x"
                             else "Valor (R$)"
                         )
                     },
@@ -377,34 +410,10 @@ fun SmartEntryScreen(
                     modifier = Modifier.fillMaxWidth()
                 )
 
-                // Opção de Despesa/Receita Fixa Mensal
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "Lançamento Fixo / Recorrente Mensal",
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                        Text(
-                            text = "Ex: Aluguel, Internet, Academia, Salário",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    Switch(
-                        checked = isRecurring,
-                        onCheckedChange = { isRecurring = it }
-                    )
-                }
-
-                // Parcelamento (para compras no Cartão)
+                // Parcelamento (curto ou longo até 360x para financiamentos/empréstimos)
                 if (!isIncome) {
                     Text(
-                        text = "Parcelamento (gera automaticamente nos próximos meses)",
+                        text = "Parcelas (1x à vista ou parcelamento longo até 360x)",
                         style = MaterialTheme.typography.labelLarge,
                         fontWeight = FontWeight.SemiBold
                     )
@@ -414,17 +423,29 @@ fun SmartEntryScreen(
                             .horizontalScroll(rememberScrollState()),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        installmentOptions.forEach { count ->
+                        quickInstallments.forEach { count ->
                             FilterChip(
                                 selected = installmentCount == count,
                                 onClick = {
                                     installmentCount = count
-                                    if (count > 1) selectedPayment = "Cartão de Crédito"
+                                    customInstallmentText = count.toString()
                                 },
                                 label = { Text(if (count == 1) "À vista (1x)" else "${count}x") }
                             )
                         }
                     }
+                    OutlinedTextField(
+                        value = customInstallmentText,
+                        onValueChange = {
+                            customInstallmentText = it
+                            val parsed = it.toIntOrNull()?.coerceIn(1, 360)
+                            if (parsed != null) installmentCount = parsed
+                        },
+                        label = { Text("Ou digite o nº exato de parcelas (ex: 18, 48, 72, 120)") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
                 }
 
                 Text(
@@ -440,7 +461,10 @@ fun SmartEntryScreen(
                     TransactionCategory.entries.forEach { category ->
                         FilterChip(
                             selected = selectedCategory.equals(category.label, ignoreCase = true),
-                            onClick = { selectedCategory = category.label },
+                            onClick = {
+                                selectedCategory = category.label
+                                selectedNature = category.defaultNature
+                            },
                             label = { Text(category.label) }
                         )
                     }
@@ -488,8 +512,9 @@ fun SmartEntryScreen(
                             selectedPayment,
                             notes,
                             wasPopulatedByAi,
-                            isRecurring,
-                            if (isIncome) 1 else installmentCount
+                            selectedNature == ExpenseNature.FIXED && installmentCount == 1,
+                            if (isIncome) 1 else installmentCount,
+                            selectedNature.name
                         )
                         onTransactionSavedNavigateHome()
                     },
@@ -505,7 +530,7 @@ fun SmartEntryScreen(
                         if (!isIncome && installmentCount > 1)
                             "Salvar ${installmentCount} Parcelas no Firestore"
                         else
-                            "Salvar Lançamento no Firestore"
+                            "Salvar Lançamento"
                     )
                 }
             }

@@ -7,7 +7,11 @@ import com.financia.app.core.update.AppUpdateInfo
 import com.financia.app.core.update.GitHubUpdateChecker
 import com.financia.app.data.model.AiExtractedTransaction
 import com.financia.app.data.model.ChatMessage
+import com.financia.app.data.model.ExpenseNature
 import com.financia.app.data.model.FinancialTransaction
+import com.financia.app.data.model.FixedBillTemplate
+import com.financia.app.data.model.LoanContract
+import com.financia.app.data.model.SavingsGoal
 import com.financia.app.data.model.TransactionCategory
 import com.financia.app.data.model.TransactionType
 import com.financia.app.data.repository.AiFinancialRepository
@@ -78,9 +82,6 @@ class FinancIAViewModel @Inject constructor(
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    /**
-     * Transações filtradas pelo Mês/Ano selecionado no Dashboard (incluindo lançamentos fixos mensais).
-     */
     val currentMonthTransactions: StateFlow<List<FinancialTransaction>> = combine(
         allTransactions,
         _uiState
@@ -94,6 +95,36 @@ class FinancIAViewModel @Inject constructor(
                 (tx.isRecurring && (txYear < state.selectedYear || (txYear == state.selectedYear && txMonth <= state.selectedMonth)))
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val fixedBills: StateFlow<List<FixedBillTemplate>> = currentUser
+        .flatMapLatest { user ->
+            if (user != null) {
+                transactionRepository.observeFixedBills(user.uid)
+            } else {
+                flowOf(emptyList())
+            }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val loans: StateFlow<List<LoanContract>> = currentUser
+        .flatMapLatest { user ->
+            if (user != null) {
+                transactionRepository.observeLoans(user.uid)
+            } else {
+                flowOf(emptyList())
+            }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val savingsGoals: StateFlow<List<SavingsGoal>> = currentUser
+        .flatMapLatest { user ->
+            if (user != null) {
+                transactionRepository.observeSavingsGoals(user.uid)
+            } else {
+                flowOf(emptyList())
+            }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val monthlyBudget: StateFlow<Double> = currentUser
         .flatMapLatest { user ->
@@ -119,7 +150,7 @@ class FinancIAViewModel @Inject constructor(
         checkForGitHubUpdates(silent = true)
     }
 
-    // --- GitHub OTA Auto-Update ---
+    // --- OTA Auto-Update ---
 
     fun checkForGitHubUpdates(silent: Boolean = false) {
         viewModelScope.launch {
@@ -213,7 +244,7 @@ class FinancIAViewModel @Inject constructor(
         _uiState.update { it.copy(showUpdateDialog = false, updateError = null) }
     }
 
-    // --- Authentication (Email, Google Sign-In & Guest) ---
+    // --- Authentication ---
 
     fun signIn(email: String, pass: String) {
         if (email.isBlank() || pass.isBlank()) {
@@ -327,6 +358,20 @@ class FinancIAViewModel @Inject constructor(
         }
     }
 
+    private fun selectedMonthTimestamp(): Long {
+        val state = _uiState.value
+        val cal = Calendar.getInstance()
+        val nowMonth = cal.get(Calendar.MONTH)
+        val nowYear = cal.get(Calendar.YEAR)
+        if (state.selectedMonth == nowMonth && state.selectedYear == nowYear) {
+            return System.currentTimeMillis()
+        }
+        cal.set(Calendar.YEAR, state.selectedYear)
+        cal.set(Calendar.MONTH, state.selectedMonth)
+        cal.set(Calendar.DAY_OF_MONTH, 15)
+        return cal.timeInMillis
+    }
+
     // --- Transactions CRUD ---
 
     fun addManualTransaction(
@@ -338,7 +383,8 @@ class FinancIAViewModel @Inject constructor(
         notes: String,
         createdByAi: Boolean = false,
         isRecurring: Boolean = false,
-        installmentCount: Int = 1
+        installmentCount: Int = 1,
+        expenseNature: String = ExpenseNature.VARIABLE.name
     ) {
         if (title.isBlank() || amount <= 0.0) return
         viewModelScope.launch {
@@ -347,11 +393,13 @@ class FinancIAViewModel @Inject constructor(
                 amount = amount,
                 type = if (isIncome) TransactionType.INCOME.name else TransactionType.EXPENSE.name,
                 category = category,
+                dateTimestamp = selectedMonthTimestamp(),
                 paymentMethod = paymentMethod,
                 notes = notes.trim(),
                 createdByAi = createdByAi,
                 isRecurring = isRecurring,
-                installmentCount = installmentCount.coerceIn(1, 48)
+                installmentCount = installmentCount.coerceIn(1, 360),
+                expenseNature = expenseNature
             )
             transactionRepository.addTransaction(tx)
             _uiState.update { it.copy(pendingAiDraft = null, aiStatusMessage = "Lançamento salvo na nuvem!") }
@@ -370,7 +418,75 @@ class FinancIAViewModel @Inject constructor(
         }
     }
 
-    // --- AI Smart Entry (Natural Language, Voice & Receipt Photo) ---
+    // --- Contas Fixas (Água, Luz, Internet...), Empréstimos/Financiamentos e Caixinhas ---
+
+    fun saveFixedBill(bill: FixedBillTemplate) {
+        viewModelScope.launch {
+            transactionRepository.saveFixedBill(bill)
+        }
+    }
+
+    fun payFixedBillForMonth(bill: FixedBillTemplate, monthKey: String, amount: Double) {
+        viewModelScope.launch {
+            transactionRepository.payFixedBillForMonth(
+                bill = bill,
+                monthKey = monthKey,
+                amountForThisMonth = amount,
+                targetTimestamp = selectedMonthTimestamp()
+            )
+        }
+    }
+
+    fun deleteFixedBill(billId: String) {
+        viewModelScope.launch {
+            transactionRepository.deleteFixedBill(billId)
+        }
+    }
+
+    fun saveLoanContract(loan: LoanContract) {
+        viewModelScope.launch {
+            transactionRepository.saveLoanContract(loan)
+        }
+    }
+
+    fun payOrAmortizeLoan(
+        loan: LoanContract,
+        installmentsPaidNow: Int,
+        customPaidAmount: Double,
+        monthKey: String,
+        isAmortization: Boolean
+    ) {
+        viewModelScope.launch {
+            transactionRepository.payOrAmortizeLoanInstallment(
+                loan = loan,
+                installmentsPaidNow = installmentsPaidNow,
+                customPaidAmount = customPaidAmount,
+                monthKey = monthKey,
+                targetTimestamp = selectedMonthTimestamp(),
+                isAmortization = isAmortization
+            )
+        }
+    }
+
+    fun deleteLoanContract(loanId: String) {
+        viewModelScope.launch {
+            transactionRepository.deleteLoanContract(loanId)
+        }
+    }
+
+    fun saveSavingsGoal(goal: SavingsGoal) {
+        viewModelScope.launch {
+            transactionRepository.saveSavingsGoal(goal)
+        }
+    }
+
+    fun deleteSavingsGoal(goalId: String) {
+        viewModelScope.launch {
+            transactionRepository.deleteSavingsGoal(goalId)
+        }
+    }
+
+    // --- AI Smart Entry ---
 
     fun processNaturalLanguageInput(text: String) {
         if (text.isBlank()) return
@@ -440,7 +556,7 @@ class FinancIAViewModel @Inject constructor(
         _uiState.update { it.copy(pendingAiDraft = null, aiStatusMessage = null) }
     }
 
-    // --- AI Financial Advisor Chat with Function Calling ---
+    // --- AI Financial Advisor & Debt Snowball Simulator ---
 
     fun sendAdvisorMessage(question: String) {
         if (question.isBlank()) return
@@ -450,16 +566,20 @@ class FinancIAViewModel @Inject constructor(
             _uiState.update { it.copy(isAdvisorThinking = true) }
 
             val currentTx = currentMonthTransactions.value
+            val currentBills = fixedBills.value
+            val currentLoans = loans.value
             val budget = monthlyBudget.value
+
             val responseResult = aiRepository.askFinancialAdvisorWithActions(
                 userQuestion = question,
                 transactions = currentTx,
+                fixedBills = currentBills,
+                loans = currentLoans,
                 monthlyBudget = budget
             )
 
             val answerText = responseResult.fold(
                 onSuccess = { actionResponse ->
-                    // Se a IA extraiu transações pedidas no chat, salva automaticamente no Firestore!
                     actionResponse.transactionsToCreate.forEach { extracted ->
                         if (extracted.amount > 0.0 && extracted.title.isNotBlank()) {
                             val tx = FinancialTransaction(
@@ -471,11 +591,13 @@ class FinancIAViewModel @Inject constructor(
                                     TransactionType.EXPENSE.name
                                 },
                                 category = extracted.category,
+                                dateTimestamp = selectedMonthTimestamp(),
                                 paymentMethod = extracted.paymentMethod,
                                 notes = extracted.notes.ifBlank { "Lançado via Chat Consultor IA" },
                                 createdByAi = true,
                                 isRecurring = extracted.isRecurring,
-                                installmentCount = extracted.installmentCount.coerceIn(1, 48)
+                                installmentCount = extracted.installmentCount.coerceIn(1, 360),
+                                expenseNature = extracted.expenseNature
                             )
                             transactionRepository.addTransaction(tx)
                         }
@@ -483,7 +605,6 @@ class FinancIAViewModel @Inject constructor(
                     actionResponse.reply
                 },
                 onFailure = {
-                    // Fallback local se o usuário pediu para registrar gastos no chat e o Gemini estiver offline
                     val lower = question.lowercase()
                     if (listOf("registra", "lança", "lanca", "anota", "gastei", "paguei", "recebi").any { lower.contains(it) }) {
                         val parts = question.split(Regex("""(?i)\s+e\s+|,""")).filter { it.isNotBlank() }
@@ -496,23 +617,25 @@ class FinancIAViewModel @Inject constructor(
                                     amount = parsed.amount,
                                     type = parsed.type,
                                     category = parsed.category,
+                                    dateTimestamp = selectedMonthTimestamp(),
                                     paymentMethod = parsed.paymentMethod,
                                     notes = "Lançado via Chat IA",
                                     createdByAi = true,
                                     isRecurring = parsed.isRecurring,
-                                    installmentCount = parsed.installmentCount
+                                    installmentCount = parsed.installmentCount,
+                                    expenseNature = parsed.expenseNature
                                 )
                                 transactionRepository.addTransaction(tx)
                                 createdList.add("• ${parsed.title}: R$ ${parsed.amount} (${parsed.category})")
                             }
                         }
                         if (createdList.isNotEmpty()) {
-                            "Pronto! Registrei automaticamente para você no Firestore:\n${createdList.joinToString("\n")}"
+                            "Pronto! Registrei automaticamente para você:\n${createdList.joinToString("\n")}"
                         } else {
-                            "Não consegui conectar ao Gemini no momento. Verifique sua conexão ou ative o Firebase AI Logic no console."
+                            "Não consegui conectar ao Gemini no momento. Verifique sua conexão."
                         }
                     } else {
-                        "Não consegui conectar ao Gemini no momento. Verifique sua conexão ou ative o Firebase AI Logic no console."
+                        "Não consegui conectar ao Gemini no momento. Verifique sua conexão."
                     }
                 }
             )
