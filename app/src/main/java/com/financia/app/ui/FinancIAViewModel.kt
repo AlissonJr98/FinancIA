@@ -11,12 +11,15 @@ import com.financia.app.data.model.ExpenseNature
 import com.financia.app.data.model.FinancialTransaction
 import com.financia.app.data.model.FixedBillTemplate
 import com.financia.app.data.model.LoanContract
+import com.financia.app.data.model.MonthlyBarStat
+import com.financia.app.data.model.ReceivableItem
 import com.financia.app.data.model.SavingsGoal
 import com.financia.app.data.model.TransactionCategory
 import com.financia.app.data.model.TransactionType
 import com.financia.app.data.repository.AiFinancialRepository
 import com.financia.app.data.repository.AuthRepository
 import com.financia.app.data.repository.TransactionRepository
+import com.financia.app.ui.theme.AppThemeMode
 import com.google.firebase.auth.FirebaseUser
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -31,6 +34,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.io.File
+import java.text.DateFormatSymbols
 import java.util.Calendar
 import java.util.Locale
 import javax.inject.Inject
@@ -47,6 +51,7 @@ data class FinancIAUiState(
     val selectedMonth: Int = Calendar.getInstance().get(Calendar.MONTH),
     val selectedYear: Int = Calendar.getInstance().get(Calendar.YEAR),
     val isPrivacyMode: Boolean = false,
+    val themeMode: AppThemeMode = AppThemeMode.DARK_AMOLED,
     // OTA Update States
     val updateInfo: AppUpdateInfo? = null,
     val showUpdateDialog: Boolean = false,
@@ -96,6 +101,53 @@ class FinancIAViewModel @Inject constructor(
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    /**
+     * Evolução dos últimos 6 meses (Receitas vs. Fixas/Dívidas vs. Variáveis) para o Gráfico de Barras.
+     */
+    val sixMonthsHistoryStats: StateFlow<List<MonthlyBarStat>> = combine(
+        allTransactions,
+        _uiState
+    ) { list, state ->
+        val shortMonths = DateFormatSymbols(Locale("pt", "BR")).shortMonths
+        val cal = Calendar.getInstance()
+        val stats = mutableListOf<MonthlyBarStat>()
+
+        for (offset in 5 downTo 0) {
+            val targetCal = Calendar.getInstance().apply {
+                set(Calendar.YEAR, state.selectedYear)
+                set(Calendar.MONTH, state.selectedMonth)
+                set(Calendar.DAY_OF_MONTH, 1)
+                add(Calendar.MONTH, -offset)
+            }
+            val m = targetCal.get(Calendar.MONTH)
+            val y = targetCal.get(Calendar.YEAR)
+            val label = shortMonths.getOrElse(m) { "" }.replace(".", "").take(3)
+                .replaceFirstChar { it.titlecase(Locale("pt", "BR")) }
+
+            val monthTx = list.filter { tx ->
+                cal.timeInMillis = tx.dateTimestamp
+                val txM = cal.get(Calendar.MONTH)
+                val txY = cal.get(Calendar.YEAR)
+                (txM == m && txY == y) ||
+                    (tx.isRecurring && (txY < y || (txY == y && txM <= m)))
+            }
+
+            val income = monthTx.filter { it.isIncome }.sumOf { it.amount }
+            val fixedDebt = monthTx.filter { !it.isIncome && it.isFixedOrDebt }.sumOf { it.amount }
+            val variable = monthTx.filter { !it.isIncome && !it.isFixedOrDebt }.sumOf { it.amount }
+
+            stats.add(
+                MonthlyBarStat(
+                    monthLabel = label,
+                    income = income,
+                    fixedAndDebt = fixedDebt,
+                    variable = variable
+                )
+            )
+        }
+        stats
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
     val fixedBills: StateFlow<List<FixedBillTemplate>> = currentUser
         .flatMapLatest { user ->
             if (user != null) {
@@ -126,6 +178,16 @@ class FinancIAViewModel @Inject constructor(
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    val receivables: StateFlow<List<ReceivableItem>> = currentUser
+        .flatMapLatest { user ->
+            if (user != null) {
+                transactionRepository.observeReceivables(user.uid)
+            } else {
+                flowOf(emptyList())
+            }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
     val monthlyBudget: StateFlow<Double> = currentUser
         .flatMapLatest { user ->
             if (user != null) {
@@ -148,6 +210,17 @@ class FinancIAViewModel @Inject constructor(
 
     init {
         checkForGitHubUpdates(silent = true)
+    }
+
+    fun cycleThemeMode() {
+        _uiState.update { state ->
+            val next = when (state.themeMode) {
+                AppThemeMode.DARK_AMOLED -> AppThemeMode.LIGHT
+                AppThemeMode.LIGHT -> AppThemeMode.SYSTEM
+                AppThemeMode.SYSTEM -> AppThemeMode.DARK_AMOLED
+            }
+            state.copy(themeMode = next)
+        }
     }
 
     // --- OTA Auto-Update ---
@@ -418,7 +491,7 @@ class FinancIAViewModel @Inject constructor(
         }
     }
 
-    // --- Contas Fixas (Água, Luz, Internet...), Empréstimos/Financiamentos e Caixinhas ---
+    // --- Contas Fixas, Empréstimos, Caixinhas e Valores A Receber ---
 
     fun saveFixedBill(bill: FixedBillTemplate) {
         viewModelScope.launch {
@@ -483,6 +556,24 @@ class FinancIAViewModel @Inject constructor(
     fun deleteSavingsGoal(goalId: String) {
         viewModelScope.launch {
             transactionRepository.deleteSavingsGoal(goalId)
+        }
+    }
+
+    fun saveReceivable(item: ReceivableItem) {
+        viewModelScope.launch {
+            transactionRepository.saveReceivable(item)
+        }
+    }
+
+    fun markReceivableAsPaid(item: ReceivableItem) {
+        viewModelScope.launch {
+            transactionRepository.markReceivableAsPaid(item, selectedMonthTimestamp())
+        }
+    }
+
+    fun deleteReceivable(itemId: String) {
+        viewModelScope.launch {
+            transactionRepository.deleteReceivable(itemId)
         }
     }
 

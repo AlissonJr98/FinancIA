@@ -1,7 +1,10 @@
 package com.financia.app.ui.screens
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -10,6 +13,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -26,6 +30,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Calculate
+import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.CreditCard
@@ -33,6 +39,7 @@ import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.NotificationsActive
+import androidx.compose.material.icons.filled.PieChart
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Visibility
@@ -75,23 +82,31 @@ import com.financia.app.data.model.FinancialTransaction
 import com.financia.app.data.model.FixedBillTemplate
 import com.financia.app.data.model.LoanContract
 import com.financia.app.data.model.LoanType
+import com.financia.app.data.model.MonthlyBarStat
+import com.financia.app.data.model.SavingsGoal
 import com.financia.app.data.model.TransactionCategory
+import com.financia.app.ui.components.CategoryIconMapper
 import com.financia.app.ui.theme.AiPurple
 import com.financia.app.ui.theme.EmeraldDark
 import com.financia.app.ui.theme.EmeraldPrimary
 import com.financia.app.ui.theme.ExpenseRed
 import com.financia.app.ui.theme.IncomeGreen
+import com.financia.app.ui.theme.WarningAmber
 import java.text.DateFormatSymbols
 import java.text.NumberFormat
 import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
 @Composable
 fun DashboardScreen(
+    userName: String,
     transactions: List<FinancialTransaction>,
+    sixMonthsStats: List<MonthlyBarStat>,
     fixedBills: List<FixedBillTemplate>,
     loans: List<LoanContract>,
+    savingsGoals: List<SavingsGoal>,
     selectedMonth: Int,
     selectedYear: Int,
     searchQuery: String,
@@ -108,7 +123,8 @@ fun DashboardScreen(
     onDeleteTransaction: (String) -> Unit,
     onOpenSmartAdd: () -> Unit,
     onOpenFixedAndDebts: () -> Unit,
-    onConvertCardInvoiceToRenegotiation: (LoanContract) -> Unit
+    onConvertCardInvoiceToRenegotiation: (LoanContract) -> Unit,
+    onAskAiCanIBuy: (String) -> Unit
 ) {
     val context = LocalContext.current
     val currencyFormatter = remember { NumberFormat.getCurrencyInstance(Locale("pt", "BR")) }
@@ -124,9 +140,21 @@ fun DashboardScreen(
         "${rawMonth.replaceFirstChar { it.titlecase(Locale("pt", "BR")) }} $selectedYear"
     }
 
+    val greeting = remember {
+        val hour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
+        when (hour) {
+            in 5..11 -> "Bom dia"
+            in 12..17 -> "Boa tarde"
+            else -> "Boa noite"
+        }
+    }
+    val todayDay = remember { Calendar.getInstance().get(Calendar.DAY_OF_MONTH) }
+
     var showBudgetDialog by remember { mutableStateOf(false) }
     var showRenegotiateCardDialog by remember { mutableStateOf(false) }
+    var showCanIBuyDialog by remember { mutableStateOf(false) }
     var editingTransaction by remember { mutableStateOf<FinancialTransaction?>(null) }
+
     val isNotificationAccessEnabled = remember(transactions) {
         BankNotificationService.isNotificationListenerEnabled(context)
     }
@@ -143,22 +171,27 @@ fun DashboardScreen(
     }
     val balance = totalIncome - totalExpense
 
-    // Despesas Fixas/Dívidas vs. Despesas Variáveis
-    val fixedAndDebtExpense = remember(transactions) {
-        transactions.filter { !it.isIncome && it.isFixedOrDebt }.sumOf { it.amount }
+    // Despesas Fixas vs. Dívidas vs. Variáveis (Regra 50-30-20)
+    val debtExpense = remember(transactions) {
+        transactions.filter { !it.isIncome && it.isDebtNature }.sumOf { it.amount }
     }
+    val essentialFixedExpense = remember(transactions, debtExpense) {
+        transactions.filter { !it.isIncome && it.isFixedOrDebt && !it.isDebtNature }.sumOf { it.amount }
+    }
+    val fixedAndDebtExpense = debtExpense + essentialFixedExpense
     val variableExpense = remember(totalExpense, fixedAndDebtExpense) {
         (totalExpense - fixedAndDebtExpense).coerceAtLeast(0.0)
     }
+    val totalSavedInGoals = remember(savingsGoals) {
+        savingsGoals.sumOf { it.currentAmount }
+    }
 
-    // Fatura do Cartão de Crédito do Mês
     val creditCardTotal = remember(transactions) {
         transactions.filter {
             !it.isIncome && it.paymentMethod.contains("Crédito", ignoreCase = true)
         }.sumOf { it.amount }
     }
 
-    // Contas Fixas Pendentes e Parcelas de Empréstimo Pendentes no Mês
     val pendingFixedBillsCount = remember(fixedBills, monthKey) {
         fixedBills.count { !it.isPaidInMonth(monthKey) }
     }
@@ -166,7 +199,6 @@ fun DashboardScreen(
         loans.count { it.remainingInstallments > 0 && !it.isPaidInMonth(monthKey) }
     }
 
-    // Score de Saúde Financeira (0 a 100)
     val healthScore = remember(totalIncome, totalExpense, monthlyBudget) {
         when {
             totalIncome == 0.0 && totalExpense == 0.0 -> 80
@@ -200,7 +232,107 @@ fun DashboardScreen(
         }
     }
 
-    // Modal de Renegociação / Parcelamento da Fatura do Cartão
+    // --- Modal: Calculadora Inteligente "Posso Comprar?" ---
+    if (showCanIBuyDialog) {
+        var itemName by remember { mutableStateOf("") }
+        var itemTotalPriceText by remember { mutableStateOf("") }
+        var itemInstallmentsText by remember { mutableStateOf("10") }
+
+        val price = itemTotalPriceText.replace(",", ".").toDoubleOrNull() ?: 0.0
+        val count = itemInstallmentsText.toIntOrNull()?.coerceIn(1, 120) ?: 1
+        val monthlyInstallment = if (count > 0) price / count else price
+        val projectedBalanceAfter = balance - monthlyInstallment
+        val projectedExpenseWithNew = totalExpense + monthlyInstallment
+
+        AlertDialog(
+            onDismissRequest = { showCanIBuyDialog = false },
+            title = { Text("Simulador: Posso Comprar?") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "Teste se uma nova compra à vista ou parcelada cabe no seu orçamento considerando suas contas fixas e empréstimos:",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    OutlinedTextField(
+                        value = itemName,
+                        onValueChange = { itemName = it },
+                        label = { Text("O que você quer comprar? (ex: TV, Celular)") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            value = itemTotalPriceText,
+                            onValueChange = { itemTotalPriceText = it },
+                            label = { Text("Valor Total (R$)") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                            singleLine = true,
+                            modifier = Modifier.weight(1.3f)
+                        )
+                        OutlinedTextField(
+                            value = itemInstallmentsText,
+                            onValueChange = { itemInstallmentsText = it },
+                            label = { Text("Parcelas") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            singleLine = true,
+                            modifier = Modifier.weight(0.7f)
+                        )
+                    }
+
+                    if (price > 0.0) {
+                        val verdictText = when {
+                            projectedBalanceAfter < 0 ->
+                                "🔴 Risco Alto: A parcela de ${currencyFormatter.format(monthlyInstallment)} deixaria seu saldo mensal negativo em ${currencyFormatter.format(projectedBalanceAfter)}."
+                            monthlyBudget > 0 && projectedExpenseWithNew > monthlyBudget ->
+                                "🟡 Atenção: Cabe no saldo, mas ultrapassa sua Meta de Teto Mensal (${currencyFormatter.format(monthlyBudget)})."
+                            else ->
+                                "🟢 Cabe no Orçamento! Parcela de ${currencyFormatter.format(monthlyInstallment)}/mês • Saldo livre projetado: ${currencyFormatter.format(projectedBalanceAfter)}."
+                        }
+                        val verdictColor = when {
+                            projectedBalanceAfter < 0 -> ExpenseRed
+                            monthlyBudget > 0 && projectedExpenseWithNew > monthlyBudget -> WarningAmber
+                            else -> IncomeGreen
+                        }
+                        Card(
+                            colors = CardDefaults.cardColors(
+                                containerColor = verdictColor.copy(alpha = 0.12f)
+                            ),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Text(
+                                text = verdictText,
+                                modifier = Modifier.padding(12.dp),
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.Bold,
+                                color = verdictColor
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val query = "Estou pensando em comprar '${itemName.ifBlank { "um item" }}' por ${currencyFormatter.format(price)} em ${count}x (${currencyFormatter.format(monthlyInstallment)}/mês). Analisando minhas contas fixas, empréstimos e saldo, vale a pena comprar agora ou melhor esperar?"
+                        showCanIBuyDialog = false
+                        onAskAiCanIBuy(query)
+                    },
+                    enabled = price > 0.0
+                ) {
+                    Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Pedir Opinião da IA")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showCanIBuyDialog = false }) {
+                    Text("Fechar")
+                }
+            }
+        )
+    }
+
+    // Modal de Renegociação da Fatura do Cartão
     if (showRenegotiateCardDialog) {
         var cardName by remember { mutableStateOf("Renegociação Fatura Cartão ($currentMonthLabel)") }
         var instValueText by remember { mutableStateOf(((creditCardTotal / 12.0).toInt()).toString()) }
@@ -405,7 +537,67 @@ fun DashboardScreen(
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        // Seletor de Mês/Ano + Exportar CSV
+        // 1. Cabeçalho Premium com Avatar/Iniciais + Saudação Dinâmica + Botão "Posso Comprar?"
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    val initial = userName.trim().firstOrNull()?.uppercaseChar()?.toString() ?: "F"
+                    Box(
+                        modifier = Modifier
+                            .size(44.dp)
+                            .clip(CircleShape)
+                            .background(
+                                Brush.linearGradient(colors = listOf(EmeraldPrimary, AiPurple))
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = initial,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = Color.White
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column {
+                        Text(
+                            text = "$greeting, ${userName.split(" ").firstOrNull() ?: "Alisson"} 👋",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        val quickStatus = when {
+                            pendingFixedBillsCount > 0 -> "Você tem $pendingFixedBillsCount conta(s) fixa(s) no mês"
+                            pendingLoansCount > 0 -> "Você tem $pendingLoansCount parcela(s) ativa(s) no mês"
+                            else -> "Suas contas do mês estão em dia!"
+                        }
+                        Text(
+                            text = quickStatus,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
+                AssistChip(
+                    onClick = { showCanIBuyDialog = true },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Default.Calculate,
+                            contentDescription = null,
+                            tint = AiPurple,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    },
+                    label = { Text("Posso Comprar?", style = MaterialTheme.typography.labelSmall) }
+                )
+            }
+        }
+
+        // 2. Seletor de Mês/Ano + Exportar CSV
         item {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -446,7 +638,7 @@ fun DashboardScreen(
             }
         }
 
-        // Cartão de Saldo Principal com Modo Privacidade (Olhinho)
+        // 3. Cartão de Saldo Principal com Modo Privacidade (Olhinho)
         item {
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -511,8 +703,102 @@ fun DashboardScreen(
             }
         }
 
-        // Termômetro: Despesas Fixas & Empréstimos vs. Despesas Variáveis + Atalho Contas Fixas
+        // 4. Calendário Visual de Vencimentos do Mês ("Mapa de Calor" de Contas Fixas e Parcelas)
+        if (fixedBills.isNotEmpty() || loans.isNotEmpty()) {
+            item {
+                Card(
+                    onClick = onOpenFixedAndDebts,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(18.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.CalendarMonth,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "Calendário de Vencimentos (Fixas & Parcelas)",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+
+                        // Lista horizontal dos dias que possuem vencimento ou linha dos 31 dias
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            val dueItems = buildList {
+                                fixedBills.forEach { bill ->
+                                    add(Triple(bill.dueDay, bill.name, bill.isPaidInMonth(monthKey)))
+                                }
+                                loans.filter { it.remainingInstallments > 0 }.forEach { loan ->
+                                    add(Triple(loan.dueDay, loan.title, loan.isPaidInMonth(monthKey)))
+                                }
+                            }.sortedBy { it.first }
+
+                            dueItems.forEach { (day, label, isPaid) ->
+                                val statusColor = when {
+                                    isPaid -> IncomeGreen
+                                    todayDay > day -> ExpenseRed
+                                    (day - todayDay) in 0..3 -> WarningAmber
+                                    else -> MaterialTheme.colorScheme.primary
+                                }
+                                Column(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(statusColor.copy(alpha = 0.12f))
+                                        .border(1.dp, statusColor.copy(alpha = 0.45f), RoundedCornerShape(12.dp))
+                                        .padding(horizontal = 10.dp, vertical = 8.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    Text(
+                                        text = "Dia $day",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        color = statusColor
+                                    )
+                                    Text(
+                                        text = label.take(12),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        maxLines = 1
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 5. Termômetro Fixas vs. Variáveis + Regra 50-30-20 Automatizada
         item {
+            val fixedRatioTarget = if (totalExpense > 0) (fixedAndDebtExpense / totalExpense).toFloat().coerceIn(0f, 1f) else 0.5f
+            val animatedFixedRatio by animateFloatAsState(
+                targetValue = fixedRatioTarget,
+                animationSpec = tween(700),
+                label = "fixedRatio"
+            )
+
             Card(
                 onClick = onOpenFixedAndDebts,
                 modifier = Modifier.fillMaxWidth(),
@@ -526,25 +812,19 @@ fun DashboardScreen(
                         .padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Default.WaterDrop,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "Despesas Fixas & Dívidas vs. Variáveis",
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.WaterDrop,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "Termômetro Fixas vs. Variáveis & Regra 50-30-20",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold
+                        )
                     }
 
                     Row(
@@ -553,20 +833,20 @@ fun DashboardScreen(
                     ) {
                         Column {
                             Text(
-                                text = "Fixas + Empréstimos",
+                                text = "50% Fixas Essenciais",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             Text(
-                                text = formatMoney(fixedAndDebtExpense),
+                                text = formatMoney(essentialFixedExpense),
                                 style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.Bold,
                                 color = Color(0xFF8B5CF6)
                             )
                         }
-                        Column(horizontalAlignment = Alignment.End) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Text(
-                                text = "Variáveis (Dia a dia)",
+                                text = "30% Variáveis",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -577,11 +857,23 @@ fun DashboardScreen(
                                 color = Color(0xFFF97316)
                             )
                         }
+                        Column(horizontalAlignment = Alignment.End) {
+                            Text(
+                                text = "20% Dívidas/Metas",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                text = formatMoney(debtExpense + totalSavedInGoals),
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFFE11D48)
+                            )
+                        }
                     }
 
-                    val fixedRatio = if (totalExpense > 0) (fixedAndDebtExpense / totalExpense).toFloat().coerceIn(0f, 1f) else 0.5f
                     LinearProgressIndicator(
-                        progress = { fixedRatio },
+                        progress = { animatedFixedRatio },
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(8.dp)
@@ -595,10 +887,10 @@ fun DashboardScreen(
                             append("⏳ $pendingFixedBillsCount conta(s) fixa(s) aguardando valor do mês (Água/Luz...) ")
                         }
                         if (pendingLoansCount > 0) {
-                            append("• $pendingLoansCount parcela(s) de empréstimo/renegociação em aberto")
+                            append("• $pendingLoansCount parcela(s) de empréstimo em aberto")
                         }
                         if (isEmpty()) {
-                            append("Toque para gerenciar Contas Fixas (Água/Luz), Empréstimos, Financiamentos e Renegociações")
+                            append("Toque para abrir Contas Fixas (Água/Luz), Empréstimos, Caixinhas e Quem te Deve")
                         }
                     }
                     Text(
@@ -611,7 +903,113 @@ fun DashboardScreen(
             }
         }
 
-        // Card de Fatura do Cartão de Crédito (com opção de Renegociar / Parcelar Fatura)
+        // 6. Gráfico de Barras Comparativo (Evolução dos Últimos 6 Meses)
+        if (sixMonthsStats.any { it.income > 0 || it.totalExpense > 0 }) {
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(18.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.PieChart,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "Evolução Mensal (Últimos 6 Meses)",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+
+                        val maxBarValue = remember(sixMonthsStats) {
+                            sixMonthsStats.maxOfOrNull { maxOf(it.income, it.totalExpense) }?.coerceAtLeast(1.0) ?: 1.0
+                        }
+
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(110.dp),
+                            horizontalArrangement = Arrangement.SpaceEvenly,
+                            verticalAlignment = Alignment.Bottom
+                        ) {
+                            sixMonthsStats.forEach { stat ->
+                                val incomeFrac = (stat.income / maxBarValue).toFloat().coerceIn(0.04f, 1f)
+                                val expFrac = (stat.totalExpense / maxBarValue).toFloat().coerceIn(0.04f, 1f)
+
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.Bottom,
+                                    modifier = Modifier.fillMaxHeight()
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.Bottom,
+                                        horizontalArrangement = Arrangement.spacedBy(3.dp),
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        // Barra de Receita
+                                        Box(
+                                            modifier = Modifier
+                                                .width(10.dp)
+                                                .fillMaxHeight(if (stat.income > 0) incomeFrac else 0.03f)
+                                                .clip(RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp))
+                                                .background(IncomeGreen)
+                                        )
+                                        // Barra de Despesa Total
+                                        Box(
+                                            modifier = Modifier
+                                                .width(10.dp)
+                                                .fillMaxHeight(if (stat.totalExpense > 0) expFrac else 0.03f)
+                                                .clip(RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp))
+                                                .background(ExpenseRed)
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                    Text(
+                                        text = stat.monthLabel,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(modifier = Modifier.size(8.dp).clip(CircleShape).background(IncomeGreen))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Receitas", style = MaterialTheme.typography.labelSmall)
+                            Spacer(modifier = Modifier.width(16.dp))
+                            Box(modifier = Modifier.size(8.dp).clip(CircleShape).background(ExpenseRed))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Despesas (Fixas + Variáveis)", style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
+                }
+            }
+        }
+
+        // 7. Card de Fatura do Cartão de Crédito
         if (creditCardTotal > 0.0) {
             item {
                 Card(
@@ -671,7 +1069,7 @@ fun DashboardScreen(
             }
         }
 
-        // Card de Meta de Orçamento Mensal + Score de Saúde Financeira IA
+        // 8. Card de Meta de Orçamento Mensal + Score de Saúde Financeira IA
         item {
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -710,10 +1108,15 @@ fun DashboardScreen(
                     }
 
                     if (monthlyBudget > 0) {
-                        val budgetProgress = (totalExpense / monthlyBudget).toFloat().coerceIn(0f, 1f)
+                        val budgetProgressTarget = (totalExpense / monthlyBudget).toFloat().coerceIn(0f, 1f)
+                        val animatedBudgetProgress by animateFloatAsState(
+                            targetValue = budgetProgressTarget,
+                            animationSpec = tween(700),
+                            label = "budgetProgress"
+                        )
                         val barColor = when {
-                            budgetProgress >= 0.9f -> ExpenseRed
-                            budgetProgress >= 0.75f -> Color(0xFFF59E0B)
+                            budgetProgressTarget >= 0.9f -> ExpenseRed
+                            budgetProgressTarget >= 0.75f -> WarningAmber
                             else -> IncomeGreen
                         }
                         Row(
@@ -732,7 +1135,7 @@ fun DashboardScreen(
                             )
                         }
                         LinearProgressIndicator(
-                            progress = { budgetProgress },
+                            progress = { animatedBudgetProgress },
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(8.dp)
@@ -750,7 +1153,7 @@ fun DashboardScreen(
             }
         }
 
-        // Card de Automação Zero-Toque (Leitura Automática de Notificações Bancárias)
+        // 9. Card de Automação Zero-Toque (Leitura Automática de Notificações Bancárias)
         item {
             Card(
                 onClick = {
@@ -810,7 +1213,7 @@ fun DashboardScreen(
             }
         }
 
-        // Gráfico de Rosca (Donut Chart) + Despesas por Categoria
+        // 10. Gráfico de Rosca (Donut Chart) + Despesas por Categoria
         if (categoryBreakdown.isNotEmpty() && totalExpense > 0) {
             item {
                 Card(
@@ -910,7 +1313,7 @@ fun DashboardScreen(
             }
         }
 
-        // Busca + Filtro por Categoria
+        // 11. Busca + Filtro por Categoria
         item {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(
@@ -967,7 +1370,7 @@ fun DashboardScreen(
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = "Use a aba 'Fixas & Dívidas' para cadastrar Água, Luz e Empréstimos, ou 'Lançar IA' para gastos do dia a dia.",
+                            text = "Use a aba 'Fixas/Dívidas' para cadastrar Água, Luz e Empréstimos, ou 'Lançar IA' para gastos do dia a dia.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -1034,6 +1437,11 @@ private fun TransactionRowCard(
     onEdit: () -> Unit,
     onDelete: () -> Unit
 ) {
+    val categoryEnum = TransactionCategory.fromLabelOrName(transaction.category)
+    val categoryColor = Color(categoryEnum.colorHex)
+    val categoryIcon = CategoryIconMapper.getIcon(transaction.category)
+    val amountColor = if (transaction.isIncome) IncomeGreen else ExpenseRed
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -1048,19 +1456,19 @@ private fun TransactionRowCard(
                 .padding(horizontal = 14.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            val badgeColor = if (transaction.isIncome) IncomeGreen else ExpenseRed
+            // Ícone Colorido Real da Categoria
             Box(
                 modifier = Modifier
-                    .size(42.dp)
+                    .size(44.dp)
                     .clip(CircleShape)
-                    .background(badgeColor.copy(alpha = 0.12f)),
+                    .background(categoryColor.copy(alpha = 0.16f)),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
-                    imageVector = if (transaction.isIncome) Icons.Default.ArrowUpward else Icons.Default.ArrowDownward,
-                    contentDescription = null,
-                    tint = badgeColor,
-                    modifier = Modifier.size(20.dp)
+                    imageVector = categoryIcon,
+                    contentDescription = transaction.category,
+                    tint = categoryColor,
+                    modifier = Modifier.size(22.dp)
                 )
             }
 
@@ -1096,7 +1504,7 @@ private fun TransactionRowCard(
                 }
                 val natureTag = when {
                     transaction.isIncome -> "Receita"
-                    transaction.expenseNature == "DEBT" -> "Empréstimo/Dívida"
+                    transaction.isDebtNature -> "Empréstimo/Dívida"
                     transaction.isFixedOrDebt -> "Despesa Fixa"
                     else -> "Variável"
                 }
@@ -1117,7 +1525,7 @@ private fun TransactionRowCard(
                     text = (if (transaction.isIncome) "+ " else "- ") + formattedAmount,
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold,
-                    color = badgeColor
+                    color = amountColor
                 )
                 Row {
                     IconButton(

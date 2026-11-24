@@ -6,6 +6,7 @@ import com.financia.app.data.model.FinancialTransaction
 import com.financia.app.data.model.FixedBillTemplate
 import com.financia.app.data.model.LoanContract
 import com.financia.app.data.model.LoanType
+import com.financia.app.data.model.ReceivableItem
 import com.financia.app.data.model.SavingsGoal
 import com.financia.app.data.model.TransactionCategory
 import com.financia.app.data.model.TransactionType
@@ -215,7 +216,6 @@ class TransactionRepository @Inject constructor(
             monthlyValues = updatedMonthly,
             paidMonths = updatedPaid
         )
-        // 1. Atualiza o molde da conta fixa com o valor daquele mês e status Pago
         firestore.collection("users")
             .document(uid)
             .collection("fixedBills")
@@ -223,7 +223,6 @@ class TransactionRepository @Inject constructor(
             .set(updatedBill.toFirestoreMap())
             .await()
 
-        // 2. Registra a despesa fixa correspondente naquele mês
         val txCol = firestore.collection("users").document(uid).collection("transactions")
         val txDoc = txCol.document()
         val tx = FinancialTransaction(
@@ -417,6 +416,85 @@ class TransactionRepository @Inject constructor(
             .document(uid)
             .collection("savingsGoals")
             .document(goalId)
+            .delete()
+            .await()
+    }
+
+    // --- Quem me deve / Valores A Receber (Emprestei para alguém) ---
+
+    fun observeReceivables(userId: String): Flow<List<ReceivableItem>> = callbackFlow {
+        val subscription = firestore.collection("users")
+            .document(userId)
+            .collection("receivables")
+            .orderBy("createdAt", Query.Direction.DESCENDING)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    trySend(emptyList())
+                    return@addSnapshotListener
+                }
+                val list = snapshot?.documents?.mapNotNull { doc ->
+                    val personName = doc.getString("personName") ?: return@mapNotNull null
+                    val description = doc.getString("description") ?: ""
+                    val amount = doc.getDouble("amount") ?: 0.0
+                    val dueDateNote = doc.getString("dueDateNote") ?: ""
+                    val isReceived = doc.getBoolean("isReceived") ?: false
+
+                    ReceivableItem(
+                        id = doc.id,
+                        personName = personName,
+                        description = description,
+                        amount = amount,
+                        dueDateNote = dueDateNote,
+                        isReceived = isReceived,
+                        createdAt = doc.getLong("createdAt") ?: System.currentTimeMillis()
+                    )
+                } ?: emptyList()
+                trySend(list)
+            }
+        awaitClose { subscription.remove() }
+    }
+
+    suspend fun saveReceivable(item: ReceivableItem): Result<Unit> = runCatching {
+        val uid = auth.currentUser?.uid ?: error("Usuário não autenticado.")
+        val col = firestore.collection("users").document(uid).collection("receivables")
+        val docRef = if (item.id.isBlank()) col.document() else col.document(item.id)
+        val withId = item.copy(id = docRef.id)
+        docRef.set(withId.toFirestoreMap()).await()
+    }
+
+    suspend fun markReceivableAsPaid(item: ReceivableItem, targetTimestamp: Long): Result<Unit> = runCatching {
+        val uid = auth.currentUser?.uid ?: error("Usuário não autenticado.")
+        val updated = item.copy(isReceived = true)
+        firestore.collection("users")
+            .document(uid)
+            .collection("receivables")
+            .document(item.id)
+            .set(updated.toFirestoreMap())
+            .await()
+
+        // Cria automaticamente a Receita correspondente quando a pessoa te paga!
+        val txCol = firestore.collection("users").document(uid).collection("transactions")
+        val txDoc = txCol.document()
+        val tx = FinancialTransaction(
+            id = txDoc.id,
+            title = "Recebido de ${item.personName} (${item.description})",
+            amount = item.amount,
+            type = TransactionType.INCOME.name,
+            category = TransactionCategory.OUTROS.label,
+            dateTimestamp = targetTimestamp,
+            paymentMethod = "Pix",
+            notes = "Reembolso / valor que ${item.personName} devia",
+            createdByAi = false
+        )
+        txDoc.set(tx.toFirestoreMap()).await()
+    }
+
+    suspend fun deleteReceivable(itemId: String): Result<Unit> = runCatching {
+        val uid = auth.currentUser?.uid ?: error("Usuário não autenticado.")
+        firestore.collection("users")
+            .document(uid)
+            .collection("receivables")
+            .document(itemId)
             .delete()
             .await()
     }

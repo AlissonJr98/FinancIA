@@ -75,12 +75,15 @@ data class FinancialTransaction(
     val isIncome: Boolean
         get() = type.equals(TransactionType.INCOME.name, ignoreCase = true)
 
+    val isDebtNature: Boolean
+        get() = expenseNature == ExpenseNature.DEBT.name ||
+            category.contains("Empréstimo", ignoreCase = true) ||
+            category.contains("Renegociação", ignoreCase = true)
+
     val isFixedOrDebt: Boolean
         get() = isRecurring ||
             expenseNature == ExpenseNature.FIXED.name ||
-            expenseNature == ExpenseNature.DEBT.name ||
-            category.contains("Empréstimo", ignoreCase = true) ||
-            category.contains("Renegociação", ignoreCase = true) ||
+            isDebtNature ||
             category.contains("Moradia", ignoreCase = true)
 
     fun toFirestoreMap(): Map<String, Any> {
@@ -106,10 +109,6 @@ data class FinancialTransaction(
     }
 }
 
-/**
- * Molde de Conta Fixa Mensal (ex: Água, Luz, Internet, Gás, Condomínio, Aluguel).
- * Fica fixa todo mês e o usuário só informa o valor que veio naquele mês (`monthlyValues["2026-11"] = 78.50`).
- */
 data class FixedBillTemplate(
     val id: String = "",
     val name: String = "",
@@ -117,8 +116,8 @@ data class FixedBillTemplate(
     val dueDay: Int = 10,
     val defaultAmount: Double = 0.0,
     val isFixedValue: Boolean = false,
-    val monthlyValues: Map<String, Double> = emptyMap(), // chave "YYYY-MM" -> valor daquele mês
-    val paidMonths: Map<String, Boolean> = emptyMap(),   // chave "YYYY-MM" -> true se já pago
+    val monthlyValues: Map<String, Double> = emptyMap(),
+    val paidMonths: Map<String, Boolean> = emptyMap(),
     val createdAt: Long = System.currentTimeMillis()
 ) {
     fun amountForMonth(monthKey: String): Double {
@@ -129,9 +128,6 @@ data class FixedBillTemplate(
         return paidMonths[monthKey] == true
     }
 
-    /**
-     * Calcula a média dos meses anteriores registrados para comparar com a conta atual.
-     */
     fun averagePreviousAmount(excludeMonthKey: String): Double {
         val otherValues = monthlyValues.filterKeys { it != excludeMonthKey }.values.filter { it > 0.0 }
         return if (otherValues.isNotEmpty()) otherValues.average() else defaultAmount
@@ -153,9 +149,6 @@ data class FixedBillTemplate(
     }
 }
 
-/**
- * Contrato de Longo Prazo: Empréstimo, Financiamento (Veículo/Imóvel) ou Renegociação de Cartão/Dívida.
- */
 data class LoanContract(
     val id: String = "",
     val title: String = "",
@@ -200,9 +193,6 @@ data class LoanContract(
     }
 }
 
-/**
- * Caixinhas / Metas de Economia (ex: Reserva de Emergência, Quitar Financiamento, Viagem).
- */
 data class SavingsGoal(
     val id: String = "",
     val title: String = "",
@@ -227,6 +217,45 @@ data class SavingsGoal(
     }
 }
 
+/**
+ * Quem me deve / Valores A Receber (ex: Emprestei cartão ou Pix para um amigo/familiar).
+ */
+data class ReceivableItem(
+    val id: String = "",
+    val personName: String = "",
+    val description: String = "",
+    val amount: Double = 0.0,
+    val dueDateNote: String = "",
+    val isReceived: Boolean = false,
+    val createdAt: Long = System.currentTimeMillis()
+) {
+    fun toFirestoreMap(): Map<String, Any> {
+        val map = mutableMapOf<String, Any>(
+            "personName" to personName.take(120),
+            "description" to description.take(200),
+            "amount" to amount.coerceAtLeast(0.01),
+            "dueDateNote" to dueDateNote.take(100),
+            "isReceived" to isReceived,
+            "createdAt" to createdAt
+        )
+        if (id.isNotBlank()) map["id"] = id.take(128)
+        return map
+    }
+}
+
+/**
+ * Resumo de barra mensal para o Gráfico Comparativo dos últimos 6 meses.
+ */
+data class MonthlyBarStat(
+    val monthLabel: String,
+    val income: Double,
+    val fixedAndDebt: Double,
+    val variable: Double
+) {
+    val totalExpense: Double
+        get() = fixedAndDebt + variable
+}
+
 @Serializable
 data class AiExtractedTransaction(
     val title: String = "",
@@ -248,7 +277,7 @@ data class AiChatActionResponse(
 
 data class ChatMessage(
     val id: String = "",
-    val role: String = "user", // "user" or "model"
+    val role: String = "user",
     val content: String = "",
     val timestamp: Long = System.currentTimeMillis()
 ) {

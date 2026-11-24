@@ -18,7 +18,9 @@ import androidx.compose.material.icons.filled.AccountBalance
 import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.ChatBubbleOutline
+import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Fingerprint
+import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material3.Badge
@@ -58,6 +60,7 @@ import com.financia.app.ui.screens.AuthScreen
 import com.financia.app.ui.screens.DashboardScreen
 import com.financia.app.ui.screens.FixedAndDebtsScreen
 import com.financia.app.ui.screens.SmartEntryScreen
+import com.financia.app.ui.theme.AppThemeMode
 import com.financia.app.ui.theme.FinancIATheme
 import dagger.hilt.android.AndroidEntryPoint
 
@@ -74,8 +77,10 @@ class MainActivity : FragmentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            FinancIATheme {
-                FinancIAAppRoot(activity = this)
+            val viewModel: FinancIAViewModel = hiltViewModel()
+            val uiState by viewModel.uiState.collectAsState()
+            FinancIATheme(themeMode = uiState.themeMode) {
+                FinancIAAppRoot(activity = this, viewModel = viewModel)
             }
         }
     }
@@ -85,15 +90,17 @@ class MainActivity : FragmentActivity() {
 @Composable
 fun FinancIAAppRoot(
     activity: FragmentActivity,
-    viewModel: FinancIAViewModel = hiltViewModel()
+    viewModel: FinancIAViewModel
 ) {
     val context = LocalContext.current
     val currentUser by viewModel.currentUser.collectAsState()
     val uiState by viewModel.uiState.collectAsState()
     val monthTransactions by viewModel.currentMonthTransactions.collectAsState()
+    val sixMonthsStats by viewModel.sixMonthsHistoryStats.collectAsState()
     val fixedBills by viewModel.fixedBills.collectAsState()
     val loans by viewModel.loans.collectAsState()
     val savingsGoals by viewModel.savingsGoals.collectAsState()
+    val receivables by viewModel.receivables.collectAsState()
     val monthlyBudget by viewModel.monthlyBudget.collectAsState()
     val chatMessages by viewModel.chatMessages.collectAsState()
 
@@ -194,6 +201,9 @@ fun FinancIAAppRoot(
     }
 
     var currentTab by rememberSaveable { mutableStateOf(MainTab.DASHBOARD) }
+    val displayUserName = currentUser?.displayName?.takeIf { it.isNotBlank() }
+        ?: currentUser?.email?.substringBefore("@")
+        ?: "Alisson"
 
     Scaffold(
         topBar = {
@@ -205,6 +215,22 @@ fun FinancIAAppRoot(
                     )
                 },
                 actions = {
+                    // Alternador de Tema (AMOLED Dark / Claro / Automático)
+                    IconButton(
+                        onClick = {
+                            viewModel.cycleThemeMode()
+                        }
+                    ) {
+                        Icon(
+                            imageVector = when (uiState.themeMode) {
+                                AppThemeMode.DARK_AMOLED -> Icons.Default.DarkMode
+                                AppThemeMode.LIGHT -> Icons.Default.LightMode
+                                AppThemeMode.SYSTEM -> Icons.Default.AutoAwesome
+                            },
+                            contentDescription = "Alternar Tema (${uiState.themeMode.label})"
+                        )
+                    }
+
                     IconButton(
                         onClick = {
                             if (!BiometricAuthHelper.isBiometricAvailable(context)) {
@@ -298,9 +324,12 @@ fun FinancIAAppRoot(
             when (currentTab) {
                 MainTab.DASHBOARD -> {
                     DashboardScreen(
+                        userName = displayUserName,
                         transactions = monthTransactions,
+                        sixMonthsStats = sixMonthsStats,
                         fixedBills = fixedBills,
                         loans = loans,
+                        savingsGoals = savingsGoals,
                         selectedMonth = uiState.selectedMonth,
                         selectedYear = uiState.selectedYear,
                         searchQuery = uiState.searchQuery,
@@ -317,7 +346,11 @@ fun FinancIAAppRoot(
                         onDeleteTransaction = viewModel::deleteTransaction,
                         onOpenSmartAdd = { currentTab = MainTab.SMART_ADD },
                         onOpenFixedAndDebts = { currentTab = MainTab.FIXED_AND_DEBTS },
-                        onConvertCardInvoiceToRenegotiation = viewModel::saveLoanContract
+                        onConvertCardInvoiceToRenegotiation = viewModel::saveLoanContract,
+                        onAskAiCanIBuy = { prompt ->
+                            currentTab = MainTab.ADVISOR
+                            viewModel.sendAdvisorMessage(prompt)
+                        }
                     )
                 }
 
@@ -328,6 +361,7 @@ fun FinancIAAppRoot(
                         fixedBills = fixedBills,
                         loans = loans,
                         savingsGoals = savingsGoals,
+                        receivables = receivables,
                         onSaveFixedBill = viewModel::saveFixedBill,
                         onPayFixedBillForMonth = viewModel::payFixedBillForMonth,
                         onDeleteFixedBill = viewModel::deleteFixedBill,
@@ -336,6 +370,9 @@ fun FinancIAAppRoot(
                         onDeleteLoanContract = viewModel::deleteLoanContract,
                         onSaveSavingsGoal = viewModel::saveSavingsGoal,
                         onDeleteSavingsGoal = viewModel::deleteSavingsGoal,
+                        onSaveReceivable = viewModel::saveReceivable,
+                        onMarkReceivableAsPaid = viewModel::markReceivableAsPaid,
+                        onDeleteReceivable = viewModel::deleteReceivable,
                         onSimulatePayoffInAiChat = {
                             currentTab = MainTab.ADVISOR
                             viewModel.sendAdvisorMessage(

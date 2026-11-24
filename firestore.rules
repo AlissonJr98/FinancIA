@@ -73,6 +73,17 @@ rules_version = '2';
 //   - deadlineNote: string (optional, <= 100 chars) - Optional target date or note
 //   - createdAt: number or timestamp (optional, immutable if present) - Creation timestamp
 //
+// Subcollection: /users/{userId}/receivables/{receivableId}
+// Document ID: {receivableId}
+// Fields:
+//   - id: string (optional, 1-128 chars, immutable if present) - Document identifier
+//   - personName: string (required, 1-120 chars) - Person or debtor name
+//   - description: string (required, 1-200 chars) - Description of the receivable
+//   - amount: number (required, > 0) - Amount owed / to receive
+//   - dueDateNote: string (optional, <= 100 chars) - Optional due date or note
+//   - isReceived: bool (required) - Whether the amount has been received
+//   - createdAt: int, number, or timestamp (optional, immutable if present) - Creation timestamp
+//
 // Subcollection: /users/{userId}/chatMessages/{messageId}
 // Document ID: {messageId}
 // Fields:
@@ -250,6 +261,23 @@ service cloud.firestore {
         (!('createdAt' in data) || isNumberOrTimestamp(data.createdAt));
     }
 
+    // Validate Receivable ("Quem me deve / A Receber") document (/users/{userId}/receivables/{receivableId})
+    function isValidReceivable(data) {
+      let requiredFields = ['personName', 'description', 'amount', 'isReceived'];
+      let allowedFields = [
+        'id', 'personName', 'description', 'amount', 'dueDateNote', 'isReceived', 'createdAt'
+      ];
+      return hasRequiredFields(requiredFields) &&
+        hasOnlyAllowedFields(allowedFields) &&
+        isValidOptionalString('id', 1, 128) &&
+        validStringLength('personName', 1, 120) &&
+        validStringLength('description', 1, 200) &&
+        (data.amount is number && data.amount > 0) &&
+        isValidOptionalString('dueDateNote', 0, 100) &&
+        (data.isReceived is bool) &&
+        (!('createdAt' in data) || data.createdAt is int || isNumberOrTimestamp(data.createdAt));
+    }
+
     // Validate AI Chat Message document (/users/{userId}/chatMessages/{messageId})
     function isValidChatMessage(data) {
       let requiredFields = ['role', 'content', 'timestamp'];
@@ -325,7 +353,21 @@ service cloud.firestore {
         allow delete: if isOwner(userId);
       }
 
-      // 6. User AI Chat History Subcollection
+      // 6. User Receivables ("Quem me deve / A Receber") Subcollection
+      match /receivables/{receivableId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) &&
+          isValidReceivable(request.resource.data) &&
+          (!('id' in request.resource.data) || request.resource.data.id == receivableId);
+        allow update: if isOwner(userId) &&
+          isValidReceivable(request.resource.data) &&
+          (!('id' in request.resource.data) || request.resource.data.id == receivableId) &&
+          isImmutableFieldUnchanged('id') &&
+          isImmutableFieldUnchanged('createdAt');
+        allow delete: if isOwner(userId);
+      }
+
+      // 7. User AI Chat History Subcollection
       match /chatMessages/{messageId} {
         allow read: if isOwner(userId);
         allow create: if isOwner(userId) && isValidChatMessage(request.resource.data);
@@ -334,7 +376,7 @@ service cloud.firestore {
       }
     }
 
-    // 7. Default Deny for all other paths
+    // 8. Default Deny for all other paths
     match /{document=**} {
       allow read, write: if false;
     }

@@ -1,6 +1,10 @@
 package com.financia.app.ui.screens
 
+import android.content.Intent
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,6 +19,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -25,7 +30,9 @@ import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.FastForward
+import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.Savings
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.WaterDrop
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
@@ -50,13 +57,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.financia.app.data.model.FixedBillTemplate
 import com.financia.app.data.model.LoanContract
 import com.financia.app.data.model.LoanType
+import com.financia.app.data.model.ReceivableItem
 import com.financia.app.data.model.SavingsGoal
 import com.financia.app.data.model.TransactionCategory
 import com.financia.app.ui.theme.AiPurple
@@ -75,6 +83,7 @@ fun FixedAndDebtsScreen(
     fixedBills: List<FixedBillTemplate>,
     loans: List<LoanContract>,
     savingsGoals: List<SavingsGoal>,
+    receivables: List<ReceivableItem>,
     onSaveFixedBill: (FixedBillTemplate) -> Unit,
     onPayFixedBillForMonth: (FixedBillTemplate, String, Double) -> Unit,
     onDeleteFixedBill: (String) -> Unit,
@@ -83,8 +92,12 @@ fun FixedAndDebtsScreen(
     onDeleteLoanContract: (String) -> Unit,
     onSaveSavingsGoal: (SavingsGoal) -> Unit,
     onDeleteSavingsGoal: (String) -> Unit,
+    onSaveReceivable: (ReceivableItem) -> Unit,
+    onMarkReceivableAsPaid: (ReceivableItem) -> Unit,
+    onDeleteReceivable: (String) -> Unit,
     onSimulatePayoffInAiChat: () -> Unit
 ) {
+    val context = LocalContext.current
     val currencyFormatter = remember { NumberFormat.getCurrencyInstance(Locale("pt", "BR")) }
     val monthKey = remember(selectedMonth, selectedYear) {
         String.format(Locale.US, "%04d-%02d", selectedYear, selectedMonth + 1)
@@ -97,7 +110,8 @@ fun FixedAndDebtsScreen(
 
     val todayDay = remember { Calendar.getInstance().get(Calendar.DAY_OF_MONTH) }
 
-    var activeSection by remember { mutableIntStateOf(0) } // 0 = Contas Fixas, 1 = Empréstimos/Renegociação, 2 = Caixinhas
+    // 0 = Contas Fixas, 1 = Empréstimos/Renegociação, 2 = Caixinhas, 3 = Quem me Deve (A Receber)
+    var activeSection by remember { mutableIntStateOf(0) }
 
     var showAddFixedBillDialog by remember { mutableStateOf(false) }
     var billToPayDialog by remember { mutableStateOf<FixedBillTemplate?>(null) }
@@ -107,6 +121,8 @@ fun FixedAndDebtsScreen(
 
     var showAddGoalDialog by remember { mutableStateOf(false) }
     var goalToDepositDialog by remember { mutableStateOf<SavingsGoal?>(null) }
+
+    var showAddReceivableDialog by remember { mutableStateOf(false) }
 
     // --- Modal: Nova Conta Fixa (Água, Luz, Internet, Aluguel...) ---
     if (showAddFixedBillDialog) {
@@ -123,8 +139,11 @@ fun FixedAndDebtsScreen(
                         text = "Ex: Água, Energia Elétrica, Internet, Gás, Condomínio ou Aluguel. Ela ficará fixa todo mês e você só informa o valor que veio na fatura daquele mês!",
                         style = MaterialTheme.typography.bodySmall
                     )
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        listOf("Água", "Energia (Luz)", "Internet", "Aluguel").forEach { preset ->
+                    Row(
+                        modifier = Modifier.horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        listOf("Água", "Energia (Luz)", "Internet", "Gás", "Aluguel").forEach { preset ->
                             AssistChip(
                                 onClick = { billName = preset },
                                 label = { Text(preset, style = MaterialTheme.typography.labelSmall) }
@@ -185,7 +204,7 @@ fun FixedAndDebtsScreen(
         )
     }
 
-    // --- Modal: Informar Valor do Mês e Pagar Conta Fixa (ex: Água deste mês) ---
+    // --- Modal: Informar Valor do Mês e Pagar Conta Fixa ---
     if (billToPayDialog != null) {
         val bill = billToPayDialog!!
         val initialVal = bill.amountForMonth(monthKey).takeIf { it > 0 }?.toString() ?: ""
@@ -240,7 +259,7 @@ fun FixedAndDebtsScreen(
         )
     }
 
-    // --- Modal: Novo Empréstimo, Financiamento ou Renegociação de Cartão ---
+    // --- Modal: Novo Empréstimo, Financiamento ou Renegociação ---
     if (showAddLoanDialog) {
         var loanTitle by remember { mutableStateOf("") }
         var selectedLoanType by remember { mutableStateOf(LoanType.EMPRESTIMO.label) }
@@ -355,7 +374,7 @@ fun FixedAndDebtsScreen(
         )
     }
 
-    // --- Modal: Amortizar / Antecipar Parcelas com Desconto ---
+    // --- Modal: Amortizar / Antecipar Parcelas ---
     if (loanToAmortizeDialog != null) {
         val loan = loanToAmortizeDialog!!
         var extraCountText by remember(loan) { mutableStateOf("1") }
@@ -412,7 +431,7 @@ fun FixedAndDebtsScreen(
         )
     }
 
-    // --- Modal: Nova Caixinha / Meta de Economia ---
+    // --- Modal: Nova Caixinha ---
     if (showAddGoalDialog) {
         var goalTitle by remember { mutableStateOf("") }
         var targetAmtText by remember { mutableStateOf("") }
@@ -524,11 +543,89 @@ fun FixedAndDebtsScreen(
         )
     }
 
+    // --- Modal: Novo Valor A Receber ("Quem me Deve / Emprestei") ---
+    if (showAddReceivableDialog) {
+        var personName by remember { mutableStateOf("") }
+        var desc by remember { mutableStateOf("") }
+        var amountText by remember { mutableStateOf("") }
+        var dueNote by remember { mutableStateOf("") }
+
+        AlertDialog(
+            onDismissRequest = { showAddReceivableDialog = false },
+            title = { Text("Registrar Valor A Receber") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "Emprestou dinheiro, dividiu um jantar ou passou o cartão para alguém? Anote aqui para cobrar pelo WhatsApp e dar baixa quando receber!",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    OutlinedTextField(
+                        value = personName,
+                        onValueChange = { personName = it },
+                        label = { Text("Nome da Pessoa (ex: João, Maria)") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = desc,
+                        onValueChange = { desc = it },
+                        label = { Text("Motivo (ex: Racha churrasco / Compra no cartão)") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = amountText,
+                        onValueChange = { amountText = it },
+                        label = { Text("Valor a Receber (R$)") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = dueNote,
+                        onValueChange = { dueNote = it },
+                        label = { Text("Quando combinou de pagar? (ex: Dia 05)") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val amt = amountText.replace(",", ".").toDoubleOrNull() ?: 0.0
+                        if (personName.isNotBlank() && amt > 0.0) {
+                            onSaveReceivable(
+                                ReceivableItem(
+                                    personName = personName.trim(),
+                                    description = desc.trim().ifBlank { "Empréstimo / Divisão" },
+                                    amount = amt,
+                                    dueDateNote = dueNote.trim()
+                                )
+                            )
+                            showAddReceivableDialog = false
+                        }
+                    }
+                ) {
+                    Text("Salvar Cobrança")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAddReceivableDialog = false }) {
+                    Text("Cancelar")
+                }
+            }
+        )
+    }
+
     val totalMonthlyDebtCommitment = remember(loans) {
         loans.filter { it.remainingInstallments > 0 }.sumOf { it.installmentAmount }
     }
     val totalRemainingDebtBalance = remember(loans) {
         loans.sumOf { it.remainingBalance }
+    }
+    val totalPendingReceivables = remember(receivables) {
+        receivables.filter { !it.isReceived }.sumOf { it.amount }
     }
 
     LazyColumn(
@@ -536,10 +633,12 @@ fun FixedAndDebtsScreen(
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        // Abas Internas: Contas Fixas (Água/Luz) | Empréstimos & Renegociações | Caixinhas
+        // Seletor de Sub-Abas
         item {
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 FilterChip(
@@ -556,6 +655,11 @@ fun FixedAndDebtsScreen(
                     selected = activeSection == 2,
                     onClick = { activeSection = 2 },
                     label = { Text("Caixinhas (${savingsGoals.size})") }
+                )
+                FilterChip(
+                    selected = activeSection == 3,
+                    onClick = { activeSection = 3 },
+                    label = { Text("A Receber (${receivables.count { !it.isReceived }})") }
                 )
             }
         }
@@ -833,6 +937,11 @@ fun FixedAndDebtsScreen(
                 items(loans, key = { it.id }) { loan ->
                     val isPaidThisMonth = loan.isPaidInMonth(monthKey)
                     val pct = (loan.progressFraction * 100).toInt()
+                    val animatedProgress by animateFloatAsState(
+                        targetValue = loan.progressFraction,
+                        animationSpec = tween(700),
+                        label = "loanProgress"
+                    )
 
                     Card(
                         modifier = Modifier.fillMaxWidth(),
@@ -890,7 +999,7 @@ fun FixedAndDebtsScreen(
                             }
 
                             LinearProgressIndicator(
-                                progress = { loan.progressFraction },
+                                progress = { animatedProgress },
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .height(8.dp)
@@ -1031,6 +1140,11 @@ fun FixedAndDebtsScreen(
             } else {
                 items(savingsGoals, key = { it.id }) { goal ->
                     val pct = (goal.progressFraction * 100).toInt()
+                    val animatedGoal by animateFloatAsState(
+                        targetValue = goal.progressFraction,
+                        animationSpec = tween(700),
+                        label = "goalProgress"
+                    )
                     Card(
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(16.dp),
@@ -1085,7 +1199,7 @@ fun FixedAndDebtsScreen(
                             }
 
                             LinearProgressIndicator(
-                                progress = { goal.progressFraction },
+                                progress = { animatedGoal },
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .height(8.dp)
@@ -1104,6 +1218,168 @@ fun FixedAndDebtsScreen(
                                     Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
                                     Spacer(modifier = Modifier.width(4.dp))
                                     Text("Guardar Valor")
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // =========================================================================
+        // SEÇÃO 3: QUEM ME DEVE / VALORES A RECEBER (+ COBRANÇA WHATSAPP)
+        // =========================================================================
+        if (activeSection == 3) {
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(18.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f)
+                    )
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Quem te Deve (Valores A Receber)",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "Total pendente a receber: ${currencyFormatter.format(totalPendingReceivables)}",
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.SemiBold,
+                                color = IncomeGreen
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Button(onClick = { showAddReceivableDialog = true }) {
+                            Icon(Icons.Default.PersonAdd, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Novo")
+                        }
+                    }
+                }
+            }
+
+            if (receivables.isEmpty()) {
+                item {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(24.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.PersonAdd,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(36.dp)
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = "Ninguém te devendo no momento",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "Emprestou o cartão ou dividiu uma conta com amigo/familiar? Toque em '+ Novo' para anotar e enviar lembrete pelo WhatsApp.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            } else {
+                items(receivables, key = { it.id }) { item ->
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "${item.personName} • ${item.description}",
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        text = if (item.isReceived) "🟢 Já recebido!"
+                                        else if (item.dueDateNote.isNotBlank()) "⏳ Combinado: ${item.dueDateNote}"
+                                        else "⏳ Aguardando pagamento",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = if (item.isReceived) IncomeGreen else MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                Text(
+                                    text = currencyFormatter.format(item.amount),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = IncomeGreen
+                                )
+                                IconButton(onClick = { onDeleteReceivable(item.id) }) {
+                                    Icon(Icons.Default.DeleteOutline, contentDescription = "Remover")
+                                }
+                            }
+
+                            if (!item.isReceived) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    OutlinedButton(
+                                        onClick = {
+                                            val msg = "Oi ${item.personName}, tudo bem? Passando para lembrar daquele valor de ${currencyFormatter.format(item.amount)} referente a '${item.description}' 😊"
+                                            val sendIntent = Intent(Intent.ACTION_SEND).apply {
+                                                type = "text/plain"
+                                                putExtra(Intent.EXTRA_TEXT, msg)
+                                            }
+                                            context.startActivity(
+                                                Intent.createChooser(sendIntent, "Enviar lembrete via WhatsApp").apply {
+                                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                                }
+                                            )
+                                        },
+                                        modifier = Modifier.weight(1f),
+                                        shape = RoundedCornerShape(10.dp)
+                                    ) {
+                                        Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(16.dp))
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text("Cobrar WhatsApp")
+                                    }
+
+                                    Button(
+                                        onClick = { onMarkReceivableAsPaid(item) },
+                                        modifier = Modifier.weight(1f),
+                                        shape = RoundedCornerShape(10.dp)
+                                    ) {
+                                        Icon(Icons.Default.CheckCircle, contentDescription = null, modifier = Modifier.size(16.dp))
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text("Recebi!")
+                                    }
                                 }
                             }
                         }
