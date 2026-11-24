@@ -1,7 +1,7 @@
 {
-  "versionCode": 5,
-  "versionName": "1.3.0",
-  "title": "FinancIA v1.3.0 — Visual AMOLED Premium, Gráfico 6 Meses, Regra 50-30-20 & Quem me Deve",
-  "notes": "• Novo Tema Escuro AMOLED Premium + alternador de tema (Escuro / Claro / Automático) no topo\n• Ícones coloridos reais por categoria, saudação personalizada com avatar e animações suaves\n• Calendário Visual de Vencimentos do Mês para Contas Fixas e Parcelas de Empréstimos\n• Gráfico de Barras Comparativo dos últimos 6 meses + Regra 50-30-20 automatizada\n• Simulador inteligente 'Posso Comprar?' com parecer imediato + consulta à IA\n• Nova seção 'A Receber (Quem te Deve)' com cobrança rápida pelo WhatsApp e baixa automática",
-  "apkUrl": "https://github.com/AlissonJr98/FinancIA/releases/download/v1.3.0/FinancIA.apk"
+  "versionCode": 6,
+  "versionName": "1.4.0",
+  "title": "FinancIA v1.4.0 — Novos Filtros Dropdown, Caixas de Texto e Botões em Gradiente",
+  "notes": "• Novos Filtros Dropdown que abrem a caixa de seleção no Dashboard (Categoria com ícones, Tipo Fixa/Variável/Receita e Ordenação por Valor/Data/A-Z)\n• Formulário de Lançamento renovado com caixas de seleção Dropdown para Categoria, Tipo de Despesa, Forma de Pagamento e Parcelas\n• Novas Caixas de Texto estilizadas com prefixo R$, fundo tonal suave e botão rápido de limpar (X)\n• Novos Botões em Gradiente Esmeralda e Roxo IA + Seletor Segmentado Despesa/Receita",
+  "apkUrl": "https://github.com/AlissonJr98/FinancIA/releases/download/v1.4.0/FinancIA.apk"
 }

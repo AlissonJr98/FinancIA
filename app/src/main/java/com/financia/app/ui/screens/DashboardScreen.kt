@@ -86,6 +86,8 @@ import com.financia.app.data.model.MonthlyBarStat
 import com.financia.app.data.model.SavingsGoal
 import com.financia.app.data.model.TransactionCategory
 import com.financia.app.ui.components.CategoryIconMapper
+import com.financia.app.ui.components.FinancIADropdownField
+import com.financia.app.ui.components.FinancIATextField
 import com.financia.app.ui.theme.AiPurple
 import com.financia.app.ui.theme.EmeraldDark
 import com.financia.app.ui.theme.EmeraldPrimary
@@ -154,6 +156,29 @@ fun DashboardScreen(
     var showRenegotiateCardDialog by remember { mutableStateOf(false) }
     var showCanIBuyDialog by remember { mutableStateOf(false) }
     var editingTransaction by remember { mutableStateOf<FinancialTransaction?>(null) }
+    var selectedNatureFilter by remember { mutableStateOf("Todos os Tipos") }
+    var selectedSortOption by remember { mutableStateOf("Mais Recentes") }
+
+    val categoryDropdownOptions = remember {
+        listOf("Todas as Categorias") + TransactionCategory.entries.map { it.label }
+    }
+    val natureFilterOptions = remember {
+        listOf(
+            "Todos os Tipos",
+            "Apenas Receitas (+)",
+            "Apenas Despesas (-)",
+            "Apenas Fixas & Empréstimos",
+            "Apenas Variáveis (Dia a dia)"
+        )
+    }
+    val sortOptions = remember {
+        listOf(
+            "Mais Recentes",
+            "Maior Valor (R$)",
+            "Menor Valor (R$)",
+            "Ordem Alfabética (A-Z)"
+        )
+    }
 
     val isNotificationAccessEnabled = remember(transactions) {
         BankNotificationService.isNotificationListenerEnabled(context)
@@ -221,14 +246,27 @@ fun DashboardScreen(
             .sortedByDescending { it.value }
     }
 
-    val filteredTransactions = remember(transactions, selectedCategory, searchQuery) {
-        transactions.filter { tx ->
+    val filteredTransactions = remember(transactions, selectedCategory, searchQuery, selectedNatureFilter, selectedSortOption) {
+        val filtered = transactions.filter { tx ->
             val matchesCat = selectedCategory == null || tx.category.equals(selectedCategory, ignoreCase = true)
+            val matchesNature = when (selectedNatureFilter) {
+                "Apenas Receitas (+)" -> tx.isIncome
+                "Apenas Despesas (-)" -> !tx.isIncome
+                "Apenas Fixas & Empréstimos" -> !tx.isIncome && tx.isFixedOrDebt
+                "Apenas Variáveis (Dia a dia)" -> !tx.isIncome && !tx.isFixedOrDebt
+                else -> true
+            }
             val matchesQuery = searchQuery.isBlank() ||
                 tx.title.contains(searchQuery, ignoreCase = true) ||
                 tx.category.contains(searchQuery, ignoreCase = true) ||
                 tx.notes.contains(searchQuery, ignoreCase = true)
-            matchesCat && matchesQuery
+            matchesCat && matchesNature && matchesQuery
+        }
+        when (selectedSortOption) {
+            "Maior Valor (R$)" -> filtered.sortedByDescending { it.amount }
+            "Menor Valor (R$)" -> filtered.sortedBy { it.amount }
+            "Ordem Alfabética (A-Z)" -> filtered.sortedBy { it.title.lowercase() }
+            else -> filtered.sortedByDescending { it.dateTimestamp }
         }
     }
 
@@ -467,40 +505,36 @@ fun DashboardScreen(
             title = { Text("Editar Lançamento") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(
+                    FinancIATextField(
                         value = editTitle,
                         onValueChange = { editTitle = it },
-                        label = { Text("Descrição") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
+                        label = "Descrição"
                     )
-                    OutlinedTextField(
+                    FinancIATextField(
                         value = editAmount,
                         onValueChange = { editAmount = it },
-                        label = { Text("Valor (R$)") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
+                        label = "Valor",
+                        prefixText = "R$ ",
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
                     )
-                    OutlinedTextField(
-                        value = editCategory,
-                        onValueChange = { editCategory = it },
-                        label = { Text("Categoria") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
+                    FinancIADropdownField(
+                        label = "Categoria",
+                        selectedValue = editCategory,
+                        options = TransactionCategory.entries.map { it.label },
+                        onOptionSelected = { editCategory = it },
+                        optionIconProvider = { CategoryIconMapper.getIcon(it) }
                     )
-                    OutlinedTextField(
-                        value = editPayment,
-                        onValueChange = { editPayment = it },
-                        label = { Text("Forma de Pagamento") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
+                    FinancIADropdownField(
+                        label = "Forma de Pagamento",
+                        selectedValue = editPayment,
+                        options = listOf("Pix", "Cartão de Crédito", "Cartão de Débito", "Boleto", "Dinheiro"),
+                        onOptionSelected = { editPayment = it }
                     )
-                    OutlinedTextField(
+                    FinancIATextField(
                         value = editNotes,
                         onValueChange = { editNotes = it },
-                        label = { Text("Observações") },
-                        modifier = Modifier.fillMaxWidth(),
+                        label = "Observações",
+                        singleLine = false,
                         maxLines = 2
                     )
                 }
@@ -1313,37 +1347,70 @@ fun DashboardScreen(
             }
         }
 
-        // 11. Busca + Filtro por Categoria
+        // 11. Busca + Filtros que abrem a Caixa para Selecionar (Dropdowns de Categoria, Tipo e Ordenação)
         item {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(
-                    value = searchQuery,
-                    onValueChange = onSearchQueryChange,
-                    placeholder = { Text("Buscar lançamento por nome, categoria ou nota...") },
-                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                    singleLine = true,
-                    shape = RoundedCornerShape(16.dp),
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                Row(
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(18.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+            ) {
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        .padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    FilterChip(
-                        selected = selectedCategory == null,
-                        onClick = { onSelectCategory(null) },
-                        label = { Text("Todas") }
+                    Text(
+                        text = "Filtrar e Pesquisar Lançamentos",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold
                     )
-                    TransactionCategory.entries.forEach { cat ->
-                        FilterChip(
-                            selected = selectedCategory == cat.label,
-                            onClick = {
-                                onSelectCategory(if (selectedCategory == cat.label) null else cat.label)
-                            },
-                            label = { Text(cat.label) }
+
+                    FinancIATextField(
+                        value = searchQuery,
+                        onValueChange = onSearchQueryChange,
+                        label = "Pesquisar lançamento",
+                        placeholder = "Digite nome, categoria ou observação...",
+                        leadingIcon = Icons.Default.Search
+                    )
+
+                    // Caixa de Seleção Dropdown: Categoria
+                    FinancIADropdownField(
+                        label = "Filtrar por Categoria",
+                        selectedValue = selectedCategory ?: "Todas as Categorias",
+                        options = categoryDropdownOptions,
+                        onOptionSelected = { chosen ->
+                            onSelectCategory(if (chosen == "Todas as Categorias") null else chosen)
+                        },
+                        optionIconProvider = { opt ->
+                            if (opt == "Todas as Categorias") Icons.Default.PieChart
+                            else CategoryIconMapper.getIcon(opt)
+                        },
+                        optionColorProvider = { opt ->
+                            if (opt == "Todas as Categorias") EmeraldPrimary
+                            else Color(TransactionCategory.fromLabelOrName(opt).colorHex)
+                        }
+                    )
+
+                    // Caixas de Seleção Lado a Lado: Tipo (Fixas/Variáveis/Receitas) + Ordenação
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        FinancIADropdownField(
+                            label = "Tipo",
+                            selectedValue = selectedNatureFilter,
+                            options = natureFilterOptions,
+                            onOptionSelected = { selectedNatureFilter = it },
+                            modifier = Modifier.weight(1f)
+                        )
+                        FinancIADropdownField(
+                            label = "Ordenar por",
+                            selectedValue = selectedSortOption,
+                            options = sortOptions,
+                            onOptionSelected = { selectedSortOption = it },
+                            modifier = Modifier.weight(1f)
                         )
                     }
                 }

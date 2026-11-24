@@ -14,8 +14,6 @@ import androidx.activity.result.launch
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -29,21 +27,26 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowDownward
+import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.CalendarViewMonth
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Notes
+import androidx.compose.material.icons.filled.Payment
 import androidx.compose.material3.AssistChip
-import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -55,6 +58,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -62,9 +66,13 @@ import androidx.compose.ui.unit.dp
 import com.financia.app.data.model.AiExtractedTransaction
 import com.financia.app.data.model.ExpenseNature
 import com.financia.app.data.model.TransactionCategory
+import com.financia.app.ui.components.CategoryIconMapper
+import com.financia.app.ui.components.FinancIADropdownField
+import com.financia.app.ui.components.FinancIAPrimaryButton
+import com.financia.app.ui.components.FinancIASecondaryButton
+import com.financia.app.ui.components.FinancIATextField
 import com.financia.app.ui.theme.AiPurple
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun SmartEntryScreen(
     isProcessingAi: Boolean,
@@ -99,7 +107,30 @@ fun SmartEntryScreen(
     var selectedNature by remember { mutableStateOf(ExpenseNature.VARIABLE) }
     var installmentCount by remember { mutableIntStateOf(1) }
     var customInstallmentText by remember { mutableStateOf("1") }
+    var isCustomInstallment by remember { mutableStateOf(false) }
     var wasPopulatedByAi by remember { mutableStateOf(false) }
+
+    val categoryOptions = remember { TransactionCategory.entries.map { it.label } }
+    val natureOptions = remember { ExpenseNature.entries.map { it.label } }
+    val paymentMethods = remember { listOf("Pix", "Cartão de Crédito", "Cartão de Débito", "Boleto", "Dinheiro") }
+    val installmentDropdownOptions = remember {
+        listOf(
+            "À vista (1x)",
+            "2x parcelas",
+            "3x parcelas",
+            "4x parcelas",
+            "6x parcelas",
+            "10x parcelas",
+            "12x parcelas",
+            "18x parcelas",
+            "24x parcelas",
+            "36x parcelas",
+            "48x parcelas",
+            "60x parcelas",
+            "120x parcelas",
+            "Personalizado (digitar nº)"
+        )
+    }
 
     LaunchedEffect(pendingAiDraft) {
         if (pendingAiDraft != null) {
@@ -156,9 +187,6 @@ fun SmartEntryScreen(
         }
     }
 
-    val paymentMethods = listOf("Pix", "Cartão de Crédito", "Cartão de Débito", "Boleto", "Dinheiro")
-    val quickInstallments = listOf(1, 2, 3, 6, 10, 12, 24, 36, 48, 60)
-
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -169,7 +197,7 @@ fun SmartEntryScreen(
         // Bloco 1: Entrada Inteligente com Gemini IA
         Card(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(20.dp),
+            shape = RoundedCornerShape(22.dp),
             colors = CardDefaults.cardColors(
                 containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.45f)
             )
@@ -195,16 +223,18 @@ fun SmartEntryScreen(
                 }
 
                 Text(
-                    text = "Descreva seu gasto variável, conta fixa (água/luz), empréstimo ou renegociação, fale no microfone ou fotografe a conta.",
+                    text = "Digite sua frase, fale no microfone ou fotografe a conta/comprovante para preencher os seletores automaticamente.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
 
-                OutlinedTextField(
+                FinancIATextField(
                     value = naturalInput,
                     onValueChange = { naturalInput = it },
-                    label = { Text("Ex: Conta de água 78,50 / Financiamento 18000 em 48x") },
-                    modifier = Modifier.fillMaxWidth(),
+                    label = "Descreva seu gasto ou receita",
+                    placeholder = "Ex: Conta de água 78,50 / Financiamento 18000 em 48x",
+                    leadingIcon = Icons.Default.AutoAwesome,
+                    singleLine = false,
                     maxLines = 3
                 )
 
@@ -231,29 +261,23 @@ fun SmartEntryScreen(
                     }
                 }
 
+                FinancIAPrimaryButton(
+                    text = if (isProcessingAi) "Interpretando com Gemini IA..." else "Interpretar Frase com IA",
+                    onClick = { onAnalyzeText(naturalInput) },
+                    icon = Icons.Default.AutoAwesome,
+                    enabled = !isProcessingAi && naturalInput.isNotBlank(),
+                    isAiStyle = true
+                )
+
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Button(
-                        onClick = { onAnalyzeText(naturalInput) },
-                        enabled = !isProcessingAi && naturalInput.isNotBlank(),
-                        modifier = Modifier.weight(1.2f)
-                    ) {
-                        if (isProcessingAi) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(18.dp),
-                                strokeWidth = 2.dp,
-                                color = MaterialTheme.colorScheme.onPrimary
-                            )
-                        } else {
-                            Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Interpretar")
-                        }
-                    }
-
-                    OutlinedButton(
+                    FinancIASecondaryButton(
+                        text = "Voz",
+                        icon = Icons.Default.Mic,
+                        enabled = !isProcessingAi,
+                        modifier = Modifier.weight(1f),
                         onClick = {
                             runCatching {
                                 val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
@@ -266,29 +290,28 @@ fun SmartEntryScreen(
                                 }
                                 speechRecognizerLauncher.launch(intent)
                             }
-                        },
-                        enabled = !isProcessingAi
-                    ) {
-                        Icon(Icons.Default.Mic, contentDescription = "Falar")
-                    }
+                        }
+                    )
 
-                    OutlinedButton(
-                        onClick = { cameraPreviewLauncher.launch() },
-                        enabled = !isProcessingAi
-                    ) {
-                        Icon(Icons.Default.CameraAlt, contentDescription = "Câmera Comprovante")
-                    }
+                    FinancIASecondaryButton(
+                        text = "Câmera",
+                        icon = Icons.Default.CameraAlt,
+                        enabled = !isProcessingAi,
+                        modifier = Modifier.weight(1f),
+                        onClick = { cameraPreviewLauncher.launch() }
+                    )
 
-                    OutlinedButton(
+                    FinancIASecondaryButton(
+                        text = "Galeria",
+                        icon = Icons.Default.Image,
+                        enabled = !isProcessingAi,
+                        modifier = Modifier.weight(1f),
                         onClick = {
                             photoPickerLauncher.launch(
                                 PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
                             )
-                        },
-                        enabled = !isProcessingAi
-                    ) {
-                        Icon(Icons.Default.Image, contentDescription = "Galeria Comprovante")
-                    }
+                        }
+                    )
                 }
 
                 if (!aiStatusMessage.isNullOrBlank()) {
@@ -302,10 +325,10 @@ fun SmartEntryScreen(
             }
         }
 
-        // Bloco 2: Dados do Lançamento + Fixa vs Variável vs Empréstimo + Parcelas Longas
+        // Bloco 2: Formulário com Caixas de Seleção Dropdown (Select Boxes)
         Card(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(20.dp),
+            shape = RoundedCornerShape(22.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
             elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
         ) {
@@ -313,7 +336,7 @@ fun SmartEntryScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
                 Text(
                     text = "Dados do Lançamento",
@@ -321,57 +344,35 @@ fun SmartEntryScreen(
                     fontWeight = FontWeight.Bold
                 )
 
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    FilterChip(
+                // Seletor Segmentado Despesa vs Receita
+                SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                    SegmentedButton(
                         selected = !isIncome,
                         onClick = { isIncome = false },
-                        label = { Text("Despesa (-)") },
-                        modifier = Modifier.weight(1f)
-                    )
-                    FilterChip(
+                        shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
+                        icon = { Icon(Icons.Default.ArrowDownward, contentDescription = null, modifier = Modifier.size(16.dp)) }
+                    ) {
+                        Text("Despesa (-)", fontWeight = FontWeight.Bold)
+                    }
+                    SegmentedButton(
                         selected = isIncome,
                         onClick = { isIncome = true },
-                        label = { Text("Receita (+)") },
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-
-                // Classificação: Despesa Variável vs. Conta Fixa vs. Empréstimo/Financiamento
-                if (!isIncome) {
-                    Text(
-                        text = "Tipo de Despesa (Fixa, Variável ou Empréstimo/Dívida)",
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        ExpenseNature.entries.forEach { nature ->
-                            FilterChip(
-                                selected = selectedNature == nature,
-                                onClick = {
-                                    selectedNature = nature
-                                    if (nature == ExpenseNature.DEBT &&
-                                        selectedCategory != TransactionCategory.EMPRESTIMOS.label &&
-                                        selectedCategory != TransactionCategory.RENEGOCIACAO.label
-                                    ) {
-                                        selectedCategory = TransactionCategory.EMPRESTIMOS.label
-                                    }
-                                },
-                                label = { Text(nature.label) },
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                        }
+                        shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
+                        icon = { Icon(Icons.Default.ArrowUpward, contentDescription = null, modifier = Modifier.size(16.dp)) }
+                    ) {
+                        Text("Receita (+)", fontWeight = FontWeight.Bold)
                     }
                 }
 
-                OutlinedTextField(
+                // Caixa de Texto: Descrição + Botão Auto-Categorizar IA
+                FinancIATextField(
                     value = title,
                     onValueChange = { title = it },
-                    label = { Text("Descrição (ex: Água, Financiamento, Mercado)") },
-                    trailingIcon = {
-                        if (title.length >= 3) {
+                    label = "Descrição do Lançamento",
+                    placeholder = "Ex: Conta de Água, Financiamento, Supermercado",
+                    leadingIcon = Icons.Default.Description,
+                    trailingContent = if (title.length >= 3) {
+                        {
                             TextButton(
                                 onClick = {
                                     onAutoCategorize(title) { suggested ->
@@ -388,121 +389,138 @@ fun SmartEntryScreen(
                                     modifier = Modifier.size(16.dp)
                                 )
                                 Spacer(modifier = Modifier.width(4.dp))
-                                Text("IA", color = AiPurple)
+                                Text("IA", color = AiPurple, fontWeight = FontWeight.Bold)
                             }
                         }
-                    },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
+                    } else null
                 )
 
-                OutlinedTextField(
+                // Caixa de Texto: Valor em R$
+                FinancIATextField(
                     value = amountText,
                     onValueChange = { amountText = it },
-                    label = {
-                        Text(
-                            if (installmentCount > 1) "Valor Total (R$) - será dividido em ${installmentCount}x"
-                            else "Valor (R$)"
-                        )
+                    label = if (!isIncome && installmentCount > 1) {
+                        "Valor Total (será dividido em ${installmentCount}x)"
+                    } else {
+                        "Valor do Lançamento"
                     },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
+                    prefixText = "R$ ",
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
                 )
 
-                // Parcelamento (curto ou longo até 360x para financiamentos/empréstimos)
+                // Dropdown 1: Categoria (com ícones coloridos dentro da caixa de seleção)
+                FinancIADropdownField(
+                    label = "Selecionar Categoria",
+                    selectedValue = selectedCategory,
+                    options = categoryOptions,
+                    onOptionSelected = { chosen ->
+                        selectedCategory = chosen
+                        val catEnum = TransactionCategory.fromLabelOrName(chosen)
+                        selectedNature = catEnum.defaultNature
+                    },
+                    optionIconProvider = { CategoryIconMapper.getIcon(it) },
+                    optionColorProvider = { Color(TransactionCategory.fromLabelOrName(it).colorHex) }
+                )
+
+                // Dropdown 2: Natureza da Despesa (Fixa, Variável ou Empréstimo/Financiamento)
                 if (!isIncome) {
-                    Text(
-                        text = "Parcelas (1x à vista ou parcelamento longo até 360x)",
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        quickInstallments.forEach { count ->
-                            FilterChip(
-                                selected = installmentCount == count,
-                                onClick = {
-                                    installmentCount = count
-                                    customInstallmentText = count.toString()
-                                },
-                                label = { Text(if (count == 1) "À vista (1x)" else "${count}x") }
-                            )
+                    FinancIADropdownField(
+                        label = "Tipo de Despesa (Fixa, Variável ou Empréstimo)",
+                        selectedValue = selectedNature.label,
+                        options = natureOptions,
+                        leadingIcon = Icons.Default.Layers,
+                        onOptionSelected = { chosenLabel ->
+                            val found = ExpenseNature.entries.firstOrNull { it.label == chosenLabel }
+                                ?: ExpenseNature.VARIABLE
+                            selectedNature = found
+                            if (found == ExpenseNature.DEBT &&
+                                selectedCategory != TransactionCategory.EMPRESTIMOS.label &&
+                                selectedCategory != TransactionCategory.RENEGOCIACAO.label
+                            ) {
+                                selectedCategory = TransactionCategory.EMPRESTIMOS.label
+                            }
                         }
+                    )
+                }
+
+                // Dropdown 3: Forma de Pagamento + Dropdown 4: Parcelamento Longo
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    FinancIADropdownField(
+                        label = "Forma de Pagamento",
+                        selectedValue = selectedPayment,
+                        options = paymentMethods,
+                        leadingIcon = Icons.Default.Payment,
+                        onOptionSelected = { selectedPayment = it },
+                        modifier = Modifier.weight(1f)
+                    )
+
+                    if (!isIncome) {
+                        val currentInstLabel = when {
+                            isCustomInstallment -> "Personalizado (${installmentCount}x)"
+                            installmentCount == 1 -> "À vista (1x)"
+                            else -> "${installmentCount}x parcelas"
+                        }
+                        FinancIADropdownField(
+                            label = "Parcelamento",
+                            selectedValue = currentInstLabel,
+                            options = installmentDropdownOptions,
+                            leadingIcon = Icons.Default.CalendarViewMonth,
+                            onOptionSelected = { option ->
+                                if (option.startsWith("Personalizado")) {
+                                    isCustomInstallment = true
+                                } else {
+                                    isCustomInstallment = false
+                                    val digits = Regex("""(\d+)""").find(option)?.value?.toIntOrNull() ?: 1
+                                    installmentCount = digits.coerceIn(1, 360)
+                                    customInstallmentText = installmentCount.toString()
+                                    if (installmentCount > 1 && selectedNature != ExpenseNature.DEBT) {
+                                        selectedPayment = "Cartão de Crédito"
+                                    }
+                                }
+                            },
+                            modifier = Modifier.weight(1f)
+                        )
                     }
-                    OutlinedTextField(
+                }
+
+                if (!isIncome && isCustomInstallment) {
+                    FinancIATextField(
                         value = customInstallmentText,
                         onValueChange = {
                             customInstallmentText = it
                             val parsed = it.toIntOrNull()?.coerceIn(1, 360)
                             if (parsed != null) installmentCount = parsed
                         },
-                        label = { Text("Ou digite o nº exato de parcelas (ex: 18, 48, 72, 120)") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
+                        label = "Digite o número exato de parcelas (1 a 360)",
+                        leadingIcon = Icons.Default.CalendarViewMonth,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
                     )
                 }
 
-                Text(
-                    text = "Categoria",
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = FontWeight.SemiBold
-                )
-
-                FlowRow(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    TransactionCategory.entries.forEach { category ->
-                        FilterChip(
-                            selected = selectedCategory.equals(category.label, ignoreCase = true),
-                            onClick = {
-                                selectedCategory = category.label
-                                selectedNature = category.defaultNature
-                            },
-                            label = { Text(category.label) }
-                        )
-                    }
-                }
-
-                Text(
-                    text = "Forma de Pagamento",
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = FontWeight.SemiBold
-                )
-
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    paymentMethods.forEach { method ->
-                        FilterChip(
-                            selected = selectedPayment.equals(method, ignoreCase = true),
-                            onClick = { selectedPayment = method },
-                            label = { Text(method) }
-                        )
-                    }
-                }
-
-                OutlinedTextField(
+                // Caixa de Texto: Observações
+                FinancIATextField(
                     value = notes,
                     onValueChange = { notes = it },
-                    label = { Text("Observações (opcional)") },
-                    modifier = Modifier.fillMaxWidth(),
+                    label = "Observações (opcional)",
+                    leadingIcon = Icons.Default.Notes,
+                    singleLine = false,
                     maxLines = 2
                 )
 
                 Spacer(modifier = Modifier.height(4.dp))
 
                 val parsedAmount = amountText.replace(",", ".").toDoubleOrNull() ?: 0.0
-                Button(
+                FinancIAPrimaryButton(
+                    text = if (!isIncome && installmentCount > 1) {
+                        "Salvar ${installmentCount} Parcelas no Firestore"
+                    } else {
+                        "Confirmar e Salvar Lançamento"
+                    },
+                    icon = Icons.Default.Check,
+                    enabled = title.isNotBlank() && parsedAmount > 0.0,
                     onClick = {
                         onSaveTransaction(
                             title,
@@ -517,22 +535,8 @@ fun SmartEntryScreen(
                             selectedNature.name
                         )
                         onTransactionSavedNavigateHome()
-                    },
-                    enabled = title.isNotBlank() && parsedAmount > 0.0,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(52.dp),
-                    shape = RoundedCornerShape(14.dp)
-                ) {
-                    Icon(Icons.Default.Check, contentDescription = null)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        if (!isIncome && installmentCount > 1)
-                            "Salvar ${installmentCount} Parcelas no Firestore"
-                        else
-                            "Salvar Lançamento"
-                    )
-                }
+                    }
+                )
             }
         }
     }

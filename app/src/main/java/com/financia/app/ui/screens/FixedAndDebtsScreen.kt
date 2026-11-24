@@ -67,6 +67,8 @@ import com.financia.app.data.model.LoanType
 import com.financia.app.data.model.ReceivableItem
 import com.financia.app.data.model.SavingsGoal
 import com.financia.app.data.model.TransactionCategory
+import com.financia.app.ui.components.FinancIADropdownField
+import com.financia.app.ui.components.FinancIATextField
 import com.financia.app.ui.theme.AiPurple
 import com.financia.app.ui.theme.ExpenseRed
 import com.financia.app.ui.theme.IncomeGreen
@@ -278,13 +280,12 @@ fun FixedAndDebtsScreen(
                         text = "Ideal para contratos de parcelas longas (12x, 36x, 48x, 60x, 120x, 360x) ou acordos de cartão de crédito.",
                         style = MaterialTheme.typography.bodySmall
                     )
-                    LoanType.entries.forEach { type ->
-                        FilterChip(
-                            selected = selectedLoanType == type.label,
-                            onClick = { selectedLoanType = type.label },
-                            label = { Text(type.label, style = MaterialTheme.typography.labelSmall) }
-                        )
-                    }
+                    FinancIADropdownField(
+                        label = "Tipo de Contrato / Dívida",
+                        selectedValue = selectedLoanType,
+                        options = LoanType.entries.map { it.label },
+                        onOptionSelected = { selectedLoanType = it }
+                    )
                     OutlinedTextField(
                         value = loanTitle,
                         onValueChange = { loanTitle = it },
