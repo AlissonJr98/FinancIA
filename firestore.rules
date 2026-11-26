@@ -12,6 +12,7 @@ rules_version = '2';
 //   - email: string (optional, <= 320 chars, valid email format) - User email address
 //   - displayName: string (optional, <= 120 chars) - User display name
 //   - monthlyBudget: number (optional, >= 0) - Monthly budget goal
+//   - categoryBudgets: map (optional, <= 30 entries) - Map of category name to number budget limit
 //   - currency: string (optional, 1-10 chars) - Currency code/symbol (e.g., 'BRL', 'USD')
 //   - updatedAt: number or timestamp (optional) - Last modification timestamp
 //
@@ -83,6 +84,17 @@ rules_version = '2';
 //   - amount: number (required, > 0) - Amount owed / to receive
 //   - dueDateNote: string (optional, <= 100 chars) - Optional due date or note
 //   - isReceived: bool (required) - Whether the amount has been received
+//   - createdAt: int, number, or timestamp (optional, immutable if present) - Creation timestamp
+//
+// Subcollection: /users/{userId}/wishlist/{wishId}
+// Document ID: {wishId}
+// Fields:
+//   - id: string (optional, 1-128 chars, immutable if present) - Document identifier
+//   - title: string (required, 1-150 chars) - Wish item title
+//   - totalPrice: number (required, > 0) - Total price of the item
+//   - installments: int (required, 1..360) - Number of planned installments
+//   - priority: string (optional, <= 40 chars) - Priority label
+//   - bestMonthHint: string (optional, <= 120 chars) - Suggested best purchase month hint
 //   - createdAt: int, number, or timestamp (optional, immutable if present) - Creation timestamp
 //
 // Subcollection: /users/{userId}/chatMessages/{messageId}
@@ -161,12 +173,13 @@ service cloud.firestore {
 
     // Validate User Profile document (/users/{userId})
     function isValidUserProfile(data) {
-      let allowedFields = ['email', 'displayName', 'monthlyBudget', 'currency', 'updatedAt'];
+      let allowedFields = ['email', 'displayName', 'monthlyBudget', 'categoryBudgets', 'currency', 'updatedAt'];
       return hasOnlyAllowedFields(allowedFields) &&
         data.keys().size() > 0 &&
         (!('email' in data) || isValidEmail(data.email)) &&
         isValidOptionalString('displayName', 0, 120) &&
         (!('monthlyBudget' in data) || (data.monthlyBudget is number && data.monthlyBudget >= 0)) &&
+        (!('categoryBudgets' in data) || (data.categoryBudgets is map && data.categoryBudgets.size() <= 30)) &&
         isValidOptionalString('currency', 1, 10) &&
         (!('updatedAt' in data) || isNumberOrTimestamp(data.updatedAt));
     }
@@ -280,6 +293,23 @@ service cloud.firestore {
         (!('createdAt' in data) || data.createdAt is int || isNumberOrTimestamp(data.createdAt));
     }
 
+    // Validate Wishlist ("Lista de Compras / Desejos Planejados") document (/users/{userId}/wishlist/{wishId})
+    function isValidWishlistItem(data) {
+      let requiredFields = ['title', 'totalPrice', 'installments'];
+      let allowedFields = [
+        'id', 'title', 'totalPrice', 'installments', 'priority', 'bestMonthHint', 'createdAt'
+      ];
+      return hasRequiredFields(requiredFields) &&
+        hasOnlyAllowedFields(allowedFields) &&
+        isValidOptionalString('id', 1, 128) &&
+        validStringLength('title', 1, 150) &&
+        (data.totalPrice is number && data.totalPrice > 0) &&
+        (data.installments is int && data.installments >= 1 && data.installments <= 360) &&
+        isValidOptionalString('priority', 0, 40) &&
+        isValidOptionalString('bestMonthHint', 0, 120) &&
+        (!('createdAt' in data) || data.createdAt is int || isNumberOrTimestamp(data.createdAt));
+    }
+
     // Validate AI Chat Message document (/users/{userId}/chatMessages/{messageId})
     function isValidChatMessage(data) {
       let requiredFields = ['role', 'content', 'timestamp'];
@@ -369,7 +399,21 @@ service cloud.firestore {
         allow delete: if isOwner(userId);
       }
 
-      // 7. User AI Chat History Subcollection
+      // 7. User Wishlist ("Lista de Compras / Desejos Planejados") Subcollection
+      match /wishlist/{wishId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) &&
+          isValidWishlistItem(request.resource.data) &&
+          (!('id' in request.resource.data) || request.resource.data.id == wishId);
+        allow update: if isOwner(userId) &&
+          isValidWishlistItem(request.resource.data) &&
+          (!('id' in request.resource.data) || request.resource.data.id == wishId) &&
+          isImmutableFieldUnchanged('id') &&
+          isImmutableFieldUnchanged('createdAt');
+        allow delete: if isOwner(userId);
+      }
+
+      // 8. User AI Chat History Subcollection
       match /chatMessages/{messageId} {
         allow read: if isOwner(userId);
         allow create: if isOwner(userId) && isValidChatMessage(request.resource.data);
@@ -378,7 +422,7 @@ service cloud.firestore {
       }
     }
 
-    // 8. Default Deny for all other paths
+    // 9. Default Deny for all other paths
     match /{document=**} {
       allow read, write: if false;
     }

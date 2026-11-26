@@ -10,6 +10,7 @@ import com.financia.app.data.model.ReceivableItem
 import com.financia.app.data.model.SavingsGoal
 import com.financia.app.data.model.TransactionCategory
 import com.financia.app.data.model.TransactionType
+import com.financia.app.data.model.WishlistItem
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
@@ -496,6 +497,58 @@ class TransactionRepository @Inject constructor(
         firestore.collection("users")
             .document(uid)
             .collection("receivables")
+            .document(itemId)
+            .delete()
+            .await()
+    }
+
+    // --- Lista de Compras / Desejos Planejados (Wishlist) ---
+
+    fun observeWishlist(userId: String): Flow<List<WishlistItem>> = callbackFlow {
+        val subscription = firestore.collection("users")
+            .document(userId)
+            .collection("wishlist")
+            .orderBy("createdAt", Query.Direction.DESCENDING)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    trySend(emptyList())
+                    return@addSnapshotListener
+                }
+                val list = snapshot?.documents?.mapNotNull { doc ->
+                    val title = doc.getString("title") ?: return@mapNotNull null
+                    val totalPrice = doc.getDouble("totalPrice") ?: 0.0
+                    val installments = (doc.getLong("installments") ?: 1L).toInt()
+                    val priority = doc.getString("priority") ?: "Média"
+                    val bestMonthHint = doc.getString("bestMonthHint") ?: ""
+
+                    WishlistItem(
+                        id = doc.id,
+                        title = title,
+                        totalPrice = totalPrice,
+                        installments = installments,
+                        priority = priority,
+                        bestMonthHint = bestMonthHint,
+                        createdAt = doc.getLong("createdAt") ?: System.currentTimeMillis()
+                    )
+                } ?: emptyList()
+                trySend(list)
+            }
+        awaitClose { subscription.remove() }
+    }
+
+    suspend fun saveWishlistItem(item: WishlistItem): Result<Unit> = runCatching {
+        val uid = auth.currentUser?.uid ?: error("Usuário não autenticado.")
+        val col = firestore.collection("users").document(uid).collection("wishlist")
+        val docRef = if (item.id.isBlank()) col.document() else col.document(item.id)
+        val withId = item.copy(id = docRef.id)
+        docRef.set(withId.toFirestoreMap()).await()
+    }
+
+    suspend fun deleteWishlistItem(itemId: String): Result<Unit> = runCatching {
+        val uid = auth.currentUser?.uid ?: error("Usuário não autenticado.")
+        firestore.collection("users")
+            .document(uid)
+            .collection("wishlist")
             .document(itemId)
             .delete()
             .await()

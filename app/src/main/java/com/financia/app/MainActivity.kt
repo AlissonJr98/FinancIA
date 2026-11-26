@@ -1,9 +1,14 @@
 package com.financia.app
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -33,6 +38,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -50,8 +59,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.financia.app.core.notifications.BillReminderNotifier
 import com.financia.app.core.security.BiometricAuthHelper
 import com.financia.app.ui.FinancIAViewModel
 import com.financia.app.ui.components.UpdateDialog
@@ -97,12 +108,58 @@ fun FinancIAAppRoot(
     val uiState by viewModel.uiState.collectAsState()
     val monthTransactions by viewModel.currentMonthTransactions.collectAsState()
     val sixMonthsStats by viewModel.sixMonthsHistoryStats.collectAsState()
+    val futureProjections by viewModel.futureProjections.collectAsState()
     val fixedBills by viewModel.fixedBills.collectAsState()
     val loans by viewModel.loans.collectAsState()
     val savingsGoals by viewModel.savingsGoals.collectAsState()
     val receivables by viewModel.receivables.collectAsState()
+    val wishlist by viewModel.wishlist.collectAsState()
     val monthlyBudget by viewModel.monthlyBudget.collectAsState()
+    val categoryBudgets by viewModel.categoryBudgets.collectAsState()
     val chatMessages by viewModel.chatMessages.collectAsState()
+
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { _ -> }
+
+    // Solicita permissão de notificação no Android 13+ e verifica Contas Fixas/Parcelas a vencer
+    LaunchedEffect(currentUser, fixedBills, loans) {
+        if (currentUser != null) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                val granted = ContextCompat.checkSelfPermission(
+                    context,
+                    Manifest.permission.POST_NOTIFICATIONS
+                ) == PackageManager.PERMISSION_GRANTED
+                if (!granted) {
+                    notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                }
+            }
+            BillReminderNotifier.checkAndNotifyDueBills(
+                context = context,
+                fixedBills = fixedBills,
+                loans = loans
+            )
+        }
+    }
+
+    // Snackbar de Desfazer Exclusão
+    LaunchedEffect(uiState.lastDeletedTransaction) {
+        val deleted = uiState.lastDeletedTransaction
+        if (deleted != null) {
+            val result = snackbarHostState.showSnackbar(
+                message = "'${deleted.title}' excluído",
+                actionLabel = "Desfazer",
+                duration = SnackbarDuration.Short
+            )
+            if (result == SnackbarResult.ActionPerformed) {
+                viewModel.undoDeleteTransaction()
+            } else {
+                viewModel.clearLastDeletedTransaction()
+            }
+        }
+    }
 
     var isBiometricEnabled by remember {
         mutableStateOf(BiometricAuthHelper.isBiometricEnabled(context))
@@ -206,6 +263,7 @@ fun FinancIAAppRoot(
         ?: "Alisson"
 
     Scaffold(
+        snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = {
@@ -215,12 +273,7 @@ fun FinancIAAppRoot(
                     )
                 },
                 actions = {
-                    // Alternador de Tema (AMOLED Dark / Claro / Automático)
-                    IconButton(
-                        onClick = {
-                            viewModel.cycleThemeMode()
-                        }
-                    ) {
+                    IconButton(onClick = { viewModel.cycleThemeMode() }) {
                         Icon(
                             imageVector = when (uiState.themeMode) {
                                 AppThemeMode.DARK_AMOLED -> Icons.Default.DarkMode
@@ -327,9 +380,12 @@ fun FinancIAAppRoot(
                         userName = displayUserName,
                         transactions = monthTransactions,
                         sixMonthsStats = sixMonthsStats,
+                        futureProjections = futureProjections,
                         fixedBills = fixedBills,
                         loans = loans,
                         savingsGoals = savingsGoals,
+                        wishlist = wishlist,
+                        categoryBudgets = categoryBudgets,
                         selectedMonth = uiState.selectedMonth,
                         selectedYear = uiState.selectedYear,
                         searchQuery = uiState.searchQuery,
@@ -342,7 +398,11 @@ fun FinancIAAppRoot(
                         onSelectCategory = viewModel::setCategoryFilter,
                         onTogglePrivacyMode = viewModel::togglePrivacyMode,
                         onSaveMonthlyBudget = viewModel::updateMonthlyBudget,
+                        onSaveCategoryBudget = viewModel::updateCategoryBudget,
+                        onSaveWishlistItem = viewModel::saveWishlistItem,
+                        onDeleteWishlistItem = viewModel::deleteWishlistItem,
                         onEditTransaction = viewModel::updateExistingTransaction,
+                        onDuplicateTransaction = viewModel::duplicateTransaction,
                         onDeleteTransaction = viewModel::deleteTransaction,
                         onOpenSmartAdd = { currentTab = MainTab.SMART_ADD },
                         onOpenFixedAndDebts = { currentTab = MainTab.FIXED_AND_DEBTS },

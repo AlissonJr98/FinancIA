@@ -38,6 +38,7 @@ import androidx.compose.material.icons.filled.Calculate
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.CreditCard
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Edit
@@ -48,6 +49,8 @@ import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.PieChart
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.ShoppingCart
+import androidx.compose.material.icons.filled.Timeline
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.WaterDrop
@@ -91,11 +94,13 @@ import com.financia.app.core.widget.FinancIAWidgetProvider
 import com.financia.app.data.model.BankAccountOption
 import com.financia.app.data.model.FinancialTransaction
 import com.financia.app.data.model.FixedBillTemplate
+import com.financia.app.data.model.FutureMonthProjection
 import com.financia.app.data.model.LoanContract
 import com.financia.app.data.model.LoanType
 import com.financia.app.data.model.MonthlyBarStat
 import com.financia.app.data.model.SavingsGoal
 import com.financia.app.data.model.TransactionCategory
+import com.financia.app.data.model.WishlistItem
 import com.financia.app.ui.components.CategoryIconMapper
 import com.financia.app.ui.components.FinancIADatePickerField
 import com.financia.app.ui.components.FinancIADropdownField
@@ -118,9 +123,12 @@ fun DashboardScreen(
     userName: String,
     transactions: List<FinancialTransaction>,
     sixMonthsStats: List<MonthlyBarStat>,
+    futureProjections: List<FutureMonthProjection>,
     fixedBills: List<FixedBillTemplate>,
     loans: List<LoanContract>,
     savingsGoals: List<SavingsGoal>,
+    wishlist: List<WishlistItem>,
+    categoryBudgets: Map<String, Double>,
     selectedMonth: Int,
     selectedYear: Int,
     searchQuery: String,
@@ -133,7 +141,11 @@ fun DashboardScreen(
     onSelectCategory: (String?) -> Unit,
     onTogglePrivacyMode: () -> Unit,
     onSaveMonthlyBudget: (Double) -> Unit,
+    onSaveCategoryBudget: (String, Double) -> Unit,
+    onSaveWishlistItem: (WishlistItem) -> Unit,
+    onDeleteWishlistItem: (String) -> Unit,
     onEditTransaction: (FinancialTransaction) -> Unit,
+    onDuplicateTransaction: (FinancialTransaction) -> Unit,
     onDeleteTransaction: (String) -> Unit,
     onOpenSmartAdd: () -> Unit,
     onOpenFixedAndDebts: () -> Unit,
@@ -166,6 +178,7 @@ fun DashboardScreen(
     val todayDay = remember { Calendar.getInstance().get(Calendar.DAY_OF_MONTH) }
 
     var showBudgetDialog by remember { mutableStateOf(false) }
+    var showCategoryBudgetDialog by remember { mutableStateOf(false) }
     var showRenegotiateCardDialog by remember { mutableStateOf(false) }
     var showCanIBuyDialog by remember { mutableStateOf(false) }
     var showImportStatementDialog by remember { mutableStateOf(false) }
@@ -174,6 +187,18 @@ fun DashboardScreen(
     var selectedNatureFilter by remember { mutableStateOf("Todos os Tipos") }
     var selectedAccountFilter by remember { mutableStateOf("Todas as Contas") }
     var selectedSortOption by remember { mutableStateOf("Mais Recentes") }
+
+    // Resumo de saldo por Banco / Conta
+    val bankAccountsSummary = remember(transactions) {
+        transactions
+            .groupBy { it.accountName.ifBlank { BankAccountOption.NUBANK.label } }
+            .map { (accName, list) ->
+                val inc = list.filter { it.isIncome }.sumOf { it.amount }
+                val exp = list.filter { !it.isIncome }.sumOf { it.amount }
+                Triple(accName, inc, exp)
+            }
+            .sortedByDescending { it.second + it.third }
+    }
 
     val statementFileLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
@@ -431,17 +456,43 @@ fun DashboardScreen(
                 }
             },
             confirmButton = {
-                Button(
-                    onClick = {
-                        val query = "Estou pensando em comprar '${itemName.ifBlank { "um item" }}' por ${currencyFormatter.format(price)} em ${count}x (${currencyFormatter.format(monthlyInstallment)}/mês). Analisando minhas contas fixas, empréstimos e saldo, vale a pena comprar agora ou melhor esperar?"
-                        showCanIBuyDialog = false
-                        onAskAiCanIBuy(query)
-                    },
-                    enabled = price > 0.0
-                ) {
-                    Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Pedir Opinião da IA")
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(
+                        onClick = {
+                            if (price > 0.0) {
+                                val bestMonth = futureProjections.minByOrNull { it.totalCommitted }?.monthLabel
+                                    ?: "Próximo mês com menor comprometimento"
+                                onSaveWishlistItem(
+                                    WishlistItem(
+                                        title = itemName.ifBlank { "Item Planejado" },
+                                        totalPrice = price,
+                                        installments = count,
+                                        bestMonthHint = "Melhor mês projetado: $bestMonth"
+                                    )
+                                )
+                                showCanIBuyDialog = false
+                                Toast.makeText(context, "Salvo na sua Lista de Desejos!", Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        enabled = price > 0.0
+                    ) {
+                        Icon(Icons.Default.ShoppingCart, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Salvar Desejo")
+                    }
+
+                    Button(
+                        onClick = {
+                            val query = "Estou pensando em comprar '${itemName.ifBlank { "um item" }}' por ${currencyFormatter.format(price)} em ${count}x (${currencyFormatter.format(monthlyInstallment)}/mês). Analisando minhas contas fixas, empréstimos e saldo, vale a pena comprar agora ou melhor esperar?"
+                            showCanIBuyDialog = false
+                            onAskAiCanIBuy(query)
+                        },
+                        enabled = price > 0.0
+                    ) {
+                        Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("IA")
+                    }
                 }
             },
             dismissButton = {
@@ -528,6 +579,60 @@ fun DashboardScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showRenegotiateCardDialog = false }) {
+                    Text("Cancelar")
+                }
+            }
+        )
+    }
+
+    // Modal de Meta de Orçamento Individual por Categoria
+    if (showCategoryBudgetDialog) {
+        var selectedCatForBudget by remember { mutableStateOf(TransactionCategory.ALIMENTACAO.label) }
+        var catLimitText by remember(selectedCatForBudget) {
+            mutableStateOf((categoryBudgets[selectedCatForBudget] ?: 0.0).takeIf { it > 0 }?.toString() ?: "")
+        }
+
+        AlertDialog(
+            onDismissRequest = { showCategoryBudgetDialog = false },
+            title = { Text("Teto de Gastos por Categoria") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        text = "Escolha a categoria na caixa abaixo e defina o limite mensal para ela (deixe 0 para remover o limite):",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    FinancIADropdownField(
+                        label = "Categoria",
+                        selectedValue = selectedCatForBudget,
+                        options = TransactionCategory.entries.filter { !it.isIncomeDefault }.map { it.label },
+                        onOptionSelected = {
+                            selectedCatForBudget = it
+                            catLimitText = (categoryBudgets[it] ?: 0.0).takeIf { v -> v > 0 }?.toString() ?: ""
+                        },
+                        optionIconProvider = { CategoryIconMapper.getIcon(it) }
+                    )
+                    FinancIATextField(
+                        value = catLimitText,
+                        onValueChange = { catLimitText = it },
+                        label = "Limite Mensal da Categoria",
+                        prefixText = "R$ ",
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val lim = catLimitText.replace(",", ".").toDoubleOrNull() ?: 0.0
+                        onSaveCategoryBudget(selectedCatForBudget, lim)
+                        showCategoryBudgetDialog = false
+                    }
+                ) {
+                    Text("Salvar Limite da Categoria")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showCategoryBudgetDialog = false }) {
                     Text("Cancelar")
                 }
             }
@@ -874,6 +979,257 @@ fun DashboardScreen(
                                 amountText = formatMoney(totalExpense),
                                 isIncome = false
                             )
+                        }
+                    }
+                }
+            }
+        }
+
+        // 3.1 Mini-Cards Coloridos de Saldo por Banco / Conta (Nubank, Inter, Itaú, Carteira...)
+        if (bankAccountsSummary.isNotEmpty()) {
+            item {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Movimentação por Conta / Banco (Toque para filtrar)",
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.Bold
+                        )
+                        if (selectedAccountFilter != "Todas as Contas") {
+                            TextButton(onClick = { selectedAccountFilter = "Todas as Contas" }) {
+                                Text("Mostrar Todas", style = MaterialTheme.typography.labelSmall)
+                            }
+                        }
+                    }
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        bankAccountsSummary.forEach { (accName, accIncome, accExpense) ->
+                            val bankOpt = BankAccountOption.fromLabel(accName)
+                            val bankColor = Color(bankOpt.colorHex)
+                            val isSelected = selectedAccountFilter.equals(accName, ignoreCase = true)
+                            val netAcc = accIncome - accExpense
+
+                            Card(
+                                onClick = {
+                                    selectedAccountFilter = if (isSelected) "Todas as Contas" else accName
+                                },
+                                shape = RoundedCornerShape(16.dp),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = if (isSelected) {
+                                        bankColor.copy(alpha = 0.25f)
+                                    } else {
+                                        MaterialTheme.colorScheme.surface
+                                    }
+                                ),
+                                modifier = Modifier
+                                    .width(155.dp)
+                                    .border(
+                                        width = if (isSelected) 2.dp else 1.dp,
+                                        color = if (isSelected) bankColor else bankColor.copy(alpha = 0.4f),
+                                        shape = RoundedCornerShape(16.dp)
+                                    )
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(10.dp)
+                                                .clip(CircleShape)
+                                                .background(bankColor)
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(
+                                            text = accName,
+                                            style = MaterialTheme.typography.labelLarge,
+                                            fontWeight = FontWeight.Bold,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                    Text(
+                                        text = formatMoney(netAcc),
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        color = if (netAcc >= 0) IncomeGreen else ExpenseRed
+                                    )
+                                    Text(
+                                        text = "Saídas: ${formatMoney(accExpense)}",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 3.2 Projeção de Saldo Futuro (Próximos 3 Meses: Fixas + Empréstimos + Parcelas)
+        if (futureProjections.any { it.totalCommitted > 0 }) {
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(18.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.Timeline,
+                                contentDescription = null,
+                                tint = AiPurple,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "Projeção dos Próximos 3 Meses (Fixas + Parcelas)",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            futureProjections.forEach { proj ->
+                                Card(
+                                    modifier = Modifier.weight(1f),
+                                    shape = RoundedCornerShape(12.dp),
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+                                    )
+                                ) {
+                                    Column(
+                                        modifier = Modifier.padding(10.dp),
+                                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        Text(
+                                            text = proj.monthLabel,
+                                            style = MaterialTheme.typography.labelMedium,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                        Text(
+                                            text = formatMoney(proj.totalCommitted),
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = FontWeight.ExtraBold
+                                        )
+                                        if (proj.finishingInstallmentsCount > 0) {
+                                            Text(
+                                                text = "🎉 ${proj.finishingInstallmentsCount} parc. acaba!",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = IncomeGreen
+                                            )
+                                        } else {
+                                            Text(
+                                                text = "Comprometido",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 3.3 Lista de Compras / Desejos Planejados (Wishlist)
+        if (wishlist.isNotEmpty()) {
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(18.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.ShoppingCart,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "Lista de Compras Planejadas (${wishlist.size})",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                            TextButton(onClick = { showCanIBuyDialog = true }) {
+                                Text("+ Simular Item", style = MaterialTheme.typography.labelSmall)
+                            }
+                        }
+
+                        wishlist.forEach { wish ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
+                                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "${wish.title} (${wish.installments}x de ${formatMoney(wish.monthlyInstallment)})",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    if (wish.bestMonthHint.isNotBlank()) {
+                                        Text(
+                                            text = "💡 ${wish.bestMonthHint}",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = IncomeGreen
+                                        )
+                                    }
+                                }
+                                IconButton(
+                                    onClick = { onDeleteWishlistItem(wish.id) },
+                                    modifier = Modifier.size(28.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.DeleteOutline,
+                                        contentDescription = "Remover desejo",
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                            }
                         }
                     }
                 }
@@ -1405,11 +1761,20 @@ fun DashboardScreen(
                             .padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(14.dp)
                     ) {
-                        Text(
-                            text = "Distribuição por Categoria",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
-                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Distribuição e Tetos por Categoria",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                            TextButton(onClick = { showCategoryBudgetDialog = true }) {
+                                Text("Limite Categoria", style = MaterialTheme.typography.labelSmall)
+                            }
+                        }
 
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -1456,31 +1821,54 @@ fun DashboardScreen(
                                 categoryBreakdown.take(5).forEach { (category, sum) ->
                                     val pct = ((sum / totalExpense) * 100).toInt()
                                     val catColor = Color(TransactionCategory.fromLabelOrName(category).colorHex)
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.SpaceBetween
-                                    ) {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Box(
-                                                modifier = Modifier
-                                                    .size(10.dp)
-                                                    .clip(CircleShape)
-                                                    .background(catColor)
-                                            )
-                                            Spacer(modifier = Modifier.width(6.dp))
+                                    val catLimit = categoryBudgets[category] ?: 0.0
+                                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .size(10.dp)
+                                                        .clip(CircleShape)
+                                                        .background(catColor)
+                                                )
+                                                Spacer(modifier = Modifier.width(6.dp))
+                                                Text(
+                                                    text = category,
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    fontWeight = FontWeight.Medium,
+                                                    maxLines = 1
+                                                )
+                                            }
                                             Text(
-                                                text = category,
-                                                style = MaterialTheme.typography.bodySmall,
-                                                fontWeight = FontWeight.Medium,
-                                                maxLines = 1
+                                                text = if (catLimit > 0) {
+                                                    "${formatMoney(sum)} / ${formatMoney(catLimit)}"
+                                                } else {
+                                                    "${formatMoney(sum)} ($pct%)"
+                                                },
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = if (catLimit > 0 && sum > catLimit) ExpenseRed
+                                                else MaterialTheme.colorScheme.onSurfaceVariant
                                             )
                                         }
-                                        Text(
-                                            text = "${formatMoney(sum)} ($pct%)",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
+                                        if (catLimit > 0) {
+                                            val catRatio = (sum / catLimit).toFloat().coerceIn(0f, 1f)
+                                            LinearProgressIndicator(
+                                                progress = { catRatio },
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .height(4.dp)
+                                                    .clip(RoundedCornerShape(2.dp)),
+                                                color = when {
+                                                    catRatio >= 1f -> ExpenseRed
+                                                    catRatio >= 0.8f -> WarningAmber
+                                                    else -> IncomeGreen
+                                                }
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -1608,6 +1996,10 @@ fun DashboardScreen(
                     formattedAmount = formatMoney(tx.amount),
                     formattedDate = dateFormatter.format(Date(tx.dateTimestamp)),
                     onEdit = { editingTransaction = tx },
+                    onDuplicate = {
+                        onDuplicateTransaction(tx)
+                        Toast.makeText(context, "Lançamento '${tx.title}' duplicado para hoje!", Toast.LENGTH_SHORT).show()
+                    },
                     onDelete = { onDeleteTransaction(tx.id) }
                 )
             }
@@ -1659,6 +2051,7 @@ private fun TransactionRowCard(
     formattedAmount: String,
     formattedDate: String,
     onEdit: () -> Unit,
+    onDuplicate: () -> Unit,
     onDelete: () -> Unit
 ) {
     val categoryEnum = TransactionCategory.fromLabelOrName(transaction.category)
@@ -1752,6 +2145,17 @@ private fun TransactionRowCard(
                     color = amountColor
                 )
                 Row {
+                    IconButton(
+                        onClick = onDuplicate,
+                        modifier = Modifier.size(28.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.ContentCopy,
+                            contentDescription = "Duplicar para Hoje",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(15.dp)
+                        )
+                    }
                     IconButton(
                         onClick = onEdit,
                         modifier = Modifier.size(28.dp)

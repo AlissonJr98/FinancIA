@@ -26,13 +26,19 @@ enum class BankAccountOption(val label: String, val colorHex: Long) {
     ITAU("Itaú", 0xFFEC7000),
     BRADESCO("Bradesco", 0xFFCC092F),
     SANTANDER("Santander", 0xFFEC0000),
-    BB("Banco do Brasil", 0xFFF8D117),
+    BB("Banco do Brasil", 0xFFEAB308),
     CAIXA("Caixa", 0xFF005CA9),
-    C6("C6 Bank", 0xFF242424),
+    C6("C6 Bank", 0xFF334155),
     PICPAY("PicPay", 0xFF11C76F),
     MERCADO_PAGO("Mercado Pago", 0xFF009EE3),
     CARTEIRA("Carteira / Dinheiro", 0xFF10B981),
-    OUTRA("Outra Conta", 0xFF64748B)
+    OUTRA("Outra Conta", 0xFF64748B);
+
+    companion object {
+        fun fromLabel(name: String): BankAccountOption {
+            return entries.firstOrNull { it.label.equals(name.trim(), ignoreCase = true) } ?: OUTRA
+        }
+    }
 }
 
 enum class TransactionCategory(
@@ -255,6 +261,49 @@ data class ReceivableItem(
         if (id.isNotBlank()) map["id"] = id.take(128)
         return map
     }
+}
+
+/**
+ * Item da Lista de Compras / Desejos Planejados (Wishlist integrada ao Simulador "Posso Comprar?").
+ */
+data class WishlistItem(
+    val id: String = "",
+    val title: String = "",
+    val totalPrice: Double = 0.0,
+    val installments: Int = 1,
+    val priority: String = "Média",
+    val bestMonthHint: String = "",
+    val createdAt: Long = System.currentTimeMillis()
+) {
+    val monthlyInstallment: Double
+        get() = if (installments > 0) totalPrice / installments else totalPrice
+
+    fun toFirestoreMap(): Map<String, Any> {
+        val map = mutableMapOf<String, Any>(
+            "title" to title.take(150),
+            "totalPrice" to totalPrice.coerceAtLeast(0.01),
+            "installments" to installments.coerceIn(1, 360),
+            "priority" to priority.take(40),
+            "bestMonthHint" to bestMonthHint.take(120),
+            "createdAt" to createdAt
+        )
+        if (id.isNotBlank()) map["id"] = id.take(128)
+        return map
+    }
+}
+
+/**
+ * Projeção de Comprometimento Financeiro para um mês futuro.
+ */
+data class FutureMonthProjection(
+    val monthLabel: String,
+    val fixedBillsEstimate: Double,
+    val loansInstallmentsTotal: Double,
+    val cardInstallmentsTotal: Double,
+    val finishingInstallmentsCount: Int
+) {
+    val totalCommitted: Double
+        get() = fixedBillsEstimate + loansInstallmentsTotal + cardInstallmentsTotal
 }
 
 data class MonthlyBarStat(

@@ -95,10 +95,44 @@ class AuthRepository @Inject constructor(
         awaitClose { subscription.remove() }
     }
 
+    @Suppress("UNCHECKED_CAST")
+    fun observeCategoryBudgets(userId: String): Flow<Map<String, Double>> = callbackFlow {
+        val subscription = firestore.collection("users")
+            .document(userId)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    trySend(emptyMap())
+                    return@addSnapshotListener
+                }
+                val rawMap = snapshot?.get("categoryBudgets") as? Map<String, Any> ?: emptyMap()
+                val parsed = rawMap.mapNotNull { (k, v) ->
+                    val num = (v as? Number)?.toDouble() ?: return@mapNotNull null
+                    k to num
+                }.toMap()
+                trySend(parsed)
+            }
+        awaitClose { subscription.remove() }
+    }
+
     suspend fun updateMonthlyBudget(budget: Double): Result<Unit> = runCatching {
         val uid = auth.currentUser?.uid ?: error("Usuário não autenticado.")
         val data = mapOf(
             "monthlyBudget" to budget.coerceAtLeast(0.0),
+            "updatedAt" to System.currentTimeMillis()
+        )
+        firestore.collection("users")
+            .document(uid)
+            .set(data, SetOptions.merge())
+            .await()
+    }
+
+    suspend fun updateCategoryBudget(categoryName: String, limit: Double, existing: Map<String, Double>): Result<Unit> = runCatching {
+        val uid = auth.currentUser?.uid ?: error("Usuário não autenticado.")
+        val newMap = existing.toMutableMap().apply {
+            if (limit <= 0.0) remove(categoryName) else put(categoryName, limit)
+        }
+        val data = mapOf(
+            "categoryBudgets" to newMap,
             "updatedAt" to System.currentTimeMillis()
         )
         firestore.collection("users")

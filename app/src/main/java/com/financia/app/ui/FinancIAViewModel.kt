@@ -13,12 +13,14 @@ import com.financia.app.data.model.ChatMessage
 import com.financia.app.data.model.ExpenseNature
 import com.financia.app.data.model.FinancialTransaction
 import com.financia.app.data.model.FixedBillTemplate
+import com.financia.app.data.model.FutureMonthProjection
 import com.financia.app.data.model.LoanContract
 import com.financia.app.data.model.MonthlyBarStat
 import com.financia.app.data.model.ReceivableItem
 import com.financia.app.data.model.SavingsGoal
 import com.financia.app.data.model.TransactionCategory
 import com.financia.app.data.model.TransactionType
+import com.financia.app.data.model.WishlistItem
 import com.financia.app.data.repository.AiFinancialRepository
 import com.financia.app.data.repository.AuthRepository
 import com.financia.app.data.repository.TransactionRepository
@@ -55,6 +57,7 @@ data class FinancIAUiState(
     val selectedYear: Int = Calendar.getInstance().get(Calendar.YEAR),
     val isPrivacyMode: Boolean = false,
     val themeMode: AppThemeMode = AppThemeMode.DARK_AMOLED,
+    val lastDeletedTransaction: FinancialTransaction? = null,
     // OTA Update States
     val updateInfo: AppUpdateInfo? = null,
     val showUpdateDialog: Boolean = false,
@@ -191,6 +194,16 @@ class FinancIAViewModel @Inject constructor(
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    val wishlist: StateFlow<List<WishlistItem>> = currentUser
+        .flatMapLatest { user ->
+            if (user != null) {
+                transactionRepository.observeWishlist(user.uid)
+            } else {
+                flowOf(emptyList())
+            }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
     val monthlyBudget: StateFlow<Double> = currentUser
         .flatMapLatest { user ->
             if (user != null) {
@@ -200,6 +213,72 @@ class FinancIAViewModel @Inject constructor(
             }
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
+
+    val categoryBudgets: StateFlow<Map<String, Double>> = currentUser
+        .flatMapLatest { user ->
+            if (user != null) {
+                authRepository.observeCategoryBudgets(user.uid)
+            } else {
+                flowOf(emptyMap())
+            }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
+
+    /**
+     * Projeção automática de gastos comprometidos para os próximos 3 meses (Fixas + Empréstimos + Parcelas).
+     */
+    val futureProjections: StateFlow<List<FutureMonthProjection>> = combine(
+        allTransactions,
+        fixedBills,
+        loans,
+        _uiState
+    ) { allTx, bills, loanList, state ->
+        val monthNames = DateFormatSymbols(Locale("pt", "BR")).months
+        val cal = Calendar.getInstance()
+        val projections = mutableListOf<FutureMonthProjection>()
+
+        val fixedBillsSum = bills.sumOf { bill ->
+            if (bill.defaultAmount > 0) bill.defaultAmount
+            else bill.monthlyValues.values.filter { it > 0 }.average().takeIf { !it.isNaN() } ?: 0.0
+        }
+
+        for (ahead in 1..3) {
+            val targetCal = Calendar.getInstance().apply {
+                set(Calendar.YEAR, state.selectedYear)
+                set(Calendar.MONTH, state.selectedMonth)
+                set(Calendar.DAY_OF_MONTH, 1)
+                add(Calendar.MONTH, ahead)
+            }
+            val m = targetCal.get(Calendar.MONTH)
+            val y = targetCal.get(Calendar.YEAR)
+            val rawM = monthNames.getOrElse(m) { "" }
+            val label = "${rawM.replaceFirstChar { it.titlecase(Locale("pt", "BR")) }}/$y"
+
+            val activeLoansSum = loanList
+                .filter { it.remainingInstallments >= ahead }
+                .sumOf { it.installmentAmount }
+
+            val finishingLoans = loanList.count { it.remainingInstallments == ahead }
+
+            val futureTxInMonth = allTx.filter { tx ->
+                cal.timeInMillis = tx.dateTimestamp
+                !tx.isIncome && cal.get(Calendar.MONTH) == m && cal.get(Calendar.YEAR) == y
+            }
+            val cardInstallmentsSum = futureTxInMonth.sumOf { it.amount }
+            val finishingCardTx = futureTxInMonth.count { it.installmentCount > 1 && it.installmentIndex == it.installmentCount }
+
+            projections.add(
+                FutureMonthProjection(
+                    monthLabel = label,
+                    fixedBillsEstimate = fixedBillsSum,
+                    loansInstallmentsTotal = activeLoansSum,
+                    cardInstallmentsTotal = cardInstallmentsSum,
+                    finishingInstallmentsCount = finishingLoans + finishingCardTx
+                )
+            )
+        }
+        projections
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val chatMessages: StateFlow<List<ChatMessage>> = currentUser
         .flatMapLatest { user ->
@@ -434,6 +513,16 @@ class FinancIAViewModel @Inject constructor(
         }
     }
 
+    fun updateCategoryBudget(categoryName: String, limit: Double) {
+        viewModelScope.launch {
+            authRepository.updateCategoryBudget(
+                categoryName = categoryName,
+                limit = limit,
+                existing = categoryBudgets.value
+            )
+        }
+    }
+
     private fun selectedMonthTimestamp(): Long {
         val state = _uiState.value
         val cal = Calendar.getInstance()
@@ -513,8 +602,49 @@ class FinancIAViewModel @Inject constructor(
     }
 
     fun deleteTransaction(id: String) {
+        val toDelete = allTransactions.value.firstOrNull { it.id == id }
         viewModelScope.launch {
             transactionRepository.deleteTransaction(id)
+            if (toDelete != null) {
+                _uiState.update { it.copy(lastDeletedTransaction = toDelete) }
+            }
+        }
+    }
+
+    fun undoDeleteTransaction() {
+        val lastDeleted = _uiState.value.lastDeletedTransaction ?: return
+        viewModelScope.launch {
+            transactionRepository.addTransaction(lastDeleted.copy(id = "", installmentCount = 1))
+            _uiState.update { it.copy(lastDeletedTransaction = null) }
+        }
+    }
+
+    fun clearLastDeletedTransaction() {
+        _uiState.update { it.copy(lastDeletedTransaction = null) }
+    }
+
+    fun duplicateTransaction(tx: FinancialTransaction) {
+        viewModelScope.launch {
+            val copyTx = tx.copy(
+                id = "",
+                dateTimestamp = System.currentTimeMillis(),
+                installmentCount = 1,
+                installmentIndex = 1,
+                createdAt = System.currentTimeMillis()
+            )
+            transactionRepository.addTransaction(copyTx)
+        }
+    }
+
+    fun saveWishlistItem(item: WishlistItem) {
+        viewModelScope.launch {
+            transactionRepository.saveWishlistItem(item)
+        }
+    }
+
+    fun deleteWishlistItem(itemId: String) {
+        viewModelScope.launch {
+            transactionRepository.deleteWishlistItem(itemId)
         }
     }
 

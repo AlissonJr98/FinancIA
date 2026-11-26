@@ -1,7 +1,7 @@
 {
-  "versionCode": 7,
-  "versionName": "1.5.0",
-  "title": "FinancIA v1.5.0 — Calendário DatePicker, Contas Bancárias, Relatório PDF, Importar Extrato & Widget",
-  "notes": "• Seletor de Data (DatePicker) que abre o calendário do Android no Lançamento e na Edição\n• Controle por Conta/Banco (Nubank, Inter, Itaú, Bradesco, Santander, BB, Caixa, C6, PicPay, Carteira...) com caixa de seleção Dropdown\n• Exportação de Relatório Mensal em PDF visualmente formatado + Excel/CSV\n• Importador Inteligente de Extrato Bancário (arquivos .CSV e .OFX)\n• Novo Widget do FinancIA para a Tela Inicial do seu Android (mostra Saldo + botão '+ Lançar IA')",
-  "apkUrl": "https://github.com/AlissonJr98/FinancIA/releases/download/v1.5.0/FinancIA.apk"
+  "versionCode": 8,
+  "versionName": "1.6.0",
+  "title": "FinancIA v1.6.0 — Limites por Categoria, Notificações de Vencimento, Projeção 3 Meses & Cards de Bancos",
+  "notes": "• Orçamento Individual por Categoria com barras de progresso dedicadas\n• Notificações Locais Automáticas de Vencimento no Android para Contas Fixas (Água, Luz...) e Parcelas de Empréstimos\n• Projeção de Saldo Futuro para os próximos 3 meses (calcula quando parcelamentos acabam!)\n• Mini-Cards Coloridos de Saldo por Conta/Banco (Nubank, Inter, Itaú, Carteira...) com filtro em 1 toque\n• Lista de Compras Planejadas (Wishlist) integrada ao simulador 'Posso Comprar?'\n• Botão de Duplicar Lançamento para Hoje + Barra 'Desfazer' ao excluir",
+  "apkUrl": "https://github.com/AlissonJr98/FinancIA/releases/download/v1.6.0/FinancIA.apk"
 }
