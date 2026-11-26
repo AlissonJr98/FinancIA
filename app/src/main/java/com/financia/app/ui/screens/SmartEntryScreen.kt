@@ -81,6 +81,8 @@ fun SmartEntryScreen(
     isProcessingAi: Boolean,
     aiStatusMessage: String?,
     pendingAiDraft: AiExtractedTransaction?,
+    customAccounts: List<String> = emptyList(),
+    customCategories: List<String> = emptyList(),
     onAnalyzeText: (String) -> Unit,
     onAnalyzeReceiptBitmap: (Bitmap) -> Unit,
     onAutoCategorize: (String, (TransactionCategory) -> Unit) -> Unit,
@@ -117,9 +119,13 @@ fun SmartEntryScreen(
     var isCustomInstallment by remember { mutableStateOf(false) }
     var wasPopulatedByAi by remember { mutableStateOf(false) }
 
-    val categoryOptions = remember { TransactionCategory.entries.map { it.label } }
+    val categoryOptions = remember(customCategories) {
+        (TransactionCategory.entries.map { it.label } + customCategories).distinct()
+    }
     val natureOptions = remember { ExpenseNature.entries.map { it.label } }
-    val bankAccountOptions = remember { BankAccountOption.entries.map { it.label } }
+    val bankAccountOptions = remember(customAccounts) {
+        (BankAccountOption.entries.map { it.label } + customAccounts).distinct()
+    }
     val paymentMethods = remember { listOf("Pix", "Cartão de Crédito", "Cartão de Débito", "Boleto", "Dinheiro") }
     val installmentDropdownOptions = remember {
         listOf(

@@ -1,7 +1,7 @@
 {
-  "versionCode": 8,
-  "versionName": "1.6.0",
-  "title": "FinancIA v1.6.0 — Limites por Categoria, Notificações de Vencimento, Projeção 3 Meses & Cards de Bancos",
-  "notes": "• Orçamento Individual por Categoria com barras de progresso dedicadas\n• Notificações Locais Automáticas de Vencimento no Android para Contas Fixas (Água, Luz...) e Parcelas de Empréstimos\n• Projeção de Saldo Futuro para os próximos 3 meses (calcula quando parcelamentos acabam!)\n• Mini-Cards Coloridos de Saldo por Conta/Banco (Nubank, Inter, Itaú, Carteira...) com filtro em 1 toque\n• Lista de Compras Planejadas (Wishlist) integrada ao simulador 'Posso Comprar?'\n• Botão de Duplicar Lançamento para Hoje + Barra 'Desfazer' ao excluir",
-  "apkUrl": "https://github.com/AlissonJr98/FinancIA/releases/download/v1.6.0/FinancIA.apk"
+  "versionCode": 9,
+  "versionName": "1.7.0",
+  "title": "FinancIA v1.7.0 — Painel de Perfil Completo, Idiomas & Modo Casal/Família Compartilhado",
+  "notes": "• Nova aba 'Perfil/Casal' com controles completos do usuário, Renda Mensal, Dia do Pagamento e Segurança\n• Seletor de Idiomas (🇧🇷 Português, 🇺🇸 English, 🇪🇸 Español) e Moeda (R$, US$, €) integrado ao Consultor Gemini IA\n• Modo Casal & Família em Tempo Real: gere um código (ex: CASAL-4829), convide pelo WhatsApp e sincronize contas, despesas fixas (água/luz) e empréstimos entre dois celulares!\n• Calculadora de Divisão Justa do Casal (50% / 50% ou Proporcional à Renda de cada um) + Selo 'Por [Nome]' em cada lançamento\n• Criação de Contas Bancárias e Categorias Personalizadas + Conquistas Financeiras (Gamificação)",
+  "apkUrl": "https://github.com/AlissonJr98/FinancIA/releases/download/v1.7.0/FinancIA.apk"
 }

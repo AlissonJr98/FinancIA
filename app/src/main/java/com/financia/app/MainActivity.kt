@@ -24,9 +24,11 @@ import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.ChatBubbleOutline
 import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Fingerprint
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
@@ -56,6 +58,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -70,16 +73,24 @@ import com.financia.app.ui.screens.AdvisorChatScreen
 import com.financia.app.ui.screens.AuthScreen
 import com.financia.app.ui.screens.DashboardScreen
 import com.financia.app.ui.screens.FixedAndDebtsScreen
+import com.financia.app.ui.screens.ProfileAndSharingScreen
 import com.financia.app.ui.screens.SmartEntryScreen
 import com.financia.app.ui.theme.AppThemeMode
 import com.financia.app.ui.theme.FinancIATheme
 import dagger.hilt.android.AndroidEntryPoint
 
-enum class MainTab(val title: String) {
-    DASHBOARD("Visão Geral"),
-    FIXED_AND_DEBTS("Fixas & Dívidas"),
-    SMART_ADD("Lançar IA"),
-    ADVISOR("Consultor IA")
+enum class MainTab(val titlePt: String, val titleEn: String, val titleEs: String) {
+    DASHBOARD("Início", "Home", "Inicio"),
+    FIXED_AND_DEBTS("Fixas/Dívidas", "Bills/Debts", "Fijos/Deudas"),
+    SMART_ADD("Lançar IA", "AI Entry", "Lanzar IA"),
+    ADVISOR("Consultor", "Advisor", "Asesor"),
+    PROFILE("Perfil/Casal", "Profile/Couple", "Perfil/Pareja");
+
+    fun labelForLanguage(langCode: String): String = when (langCode) {
+        "en-US" -> titleEn
+        "es-ES" -> titleEs
+        else -> titlePt
+    }
 }
 
 @AndroidEntryPoint
@@ -105,6 +116,7 @@ fun FinancIAAppRoot(
 ) {
     val context = LocalContext.current
     val currentUser by viewModel.currentUser.collectAsState()
+    val profileConfig by viewModel.userProfileConfig.collectAsState()
     val uiState by viewModel.uiState.collectAsState()
     val monthTransactions by viewModel.currentMonthTransactions.collectAsState()
     val sixMonthsStats by viewModel.sixMonthsHistoryStats.collectAsState()
@@ -114,6 +126,7 @@ fun FinancIAAppRoot(
     val savingsGoals by viewModel.savingsGoals.collectAsState()
     val receivables by viewModel.receivables.collectAsState()
     val wishlist by viewModel.wishlist.collectAsState()
+    val achievements by viewModel.achievements.collectAsState()
     val monthlyBudget by viewModel.monthlyBudget.collectAsState()
     val categoryBudgets by viewModel.categoryBudgets.collectAsState()
     val chatMessages by viewModel.chatMessages.collectAsState()
@@ -124,7 +137,6 @@ fun FinancIAAppRoot(
         contract = ActivityResultContracts.RequestPermission()
     ) { _ -> }
 
-    // Solicita permissão de notificação no Android 13+ e verifica Contas Fixas/Parcelas a vencer
     LaunchedEffect(currentUser, fixedBills, loans) {
         if (currentUser != null) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -144,7 +156,6 @@ fun FinancIAAppRoot(
         }
     }
 
-    // Snackbar de Desfazer Exclusão
     LaunchedEffect(uiState.lastDeletedTransaction) {
         val deleted = uiState.lastDeletedTransaction
         if (deleted != null) {
@@ -258,9 +269,33 @@ fun FinancIAAppRoot(
     }
 
     var currentTab by rememberSaveable { mutableStateOf(MainTab.DASHBOARD) }
-    val displayUserName = currentUser?.displayName?.takeIf { it.isNotBlank() }
+    val displayUserName = profileConfig.displayName.takeIf { it.isNotBlank() }
+        ?: currentUser?.displayName?.takeIf { it.isNotBlank() }
         ?: currentUser?.email?.substringBefore("@")
         ?: "Alisson"
+
+    val langCode = profileConfig.languageCode
+
+    val toggleBiometricAction = {
+        if (!BiometricAuthHelper.isBiometricAvailable(context)) {
+            Toast.makeText(
+                context,
+                "Configure uma digital ou bloqueio de tela nas configurações do Android.",
+                Toast.LENGTH_LONG
+            ).show()
+        } else {
+            val nextState = !isBiometricEnabled
+            BiometricAuthHelper.setBiometricEnabled(context, nextState)
+            isBiometricEnabled = nextState
+            isAppUnlocked = true
+            val msg = if (nextState) {
+                "Proteção por Biometria ATIVADA!"
+            } else {
+                "Proteção por Biometria DESATIVADA."
+            }
+            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+        }
+    }
 
     Scaffold(
         snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
@@ -268,11 +303,33 @@ fun FinancIAAppRoot(
             TopAppBar(
                 title = {
                     Text(
-                        text = "FinancIA • ${currentTab.title}",
+                        text = "FinancIA • ${currentTab.labelForLanguage(langCode)}",
                         fontWeight = FontWeight.Bold
                     )
                 },
                 actions = {
+                    // Se o Modo Casal estiver configurado, mostra ícone de Coração para alternar rápido entre Carteira do Casal vs Individual
+                    if (profileConfig.sharedSpaceId.isNotBlank()) {
+                        IconButton(
+                            onClick = {
+                                viewModel.toggleSharedCoupleView()
+                                val modeMsg = if (!uiState.isViewingSharedCoupleSpace) {
+                                    "Exibindo Carteira Compartilhada do Casal (${profileConfig.sharedSpaceId})"
+                                } else {
+                                    "Exibindo sua Carteira Individual"
+                                }
+                                Toast.makeText(context, modeMsg, Toast.LENGTH_SHORT).show()
+                            }
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Favorite,
+                                contentDescription = "Alternar Modo Casal",
+                                tint = if (uiState.isViewingSharedCoupleSpace) Color(0xFFEC4899)
+                                else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+
                     IconButton(onClick = { viewModel.cycleThemeMode() }) {
                         Icon(
                             imageVector = when (uiState.themeMode) {
@@ -281,39 +338,6 @@ fun FinancIAAppRoot(
                                 AppThemeMode.SYSTEM -> Icons.Default.AutoAwesome
                             },
                             contentDescription = "Alternar Tema (${uiState.themeMode.label})"
-                        )
-                    }
-
-                    IconButton(
-                        onClick = {
-                            if (!BiometricAuthHelper.isBiometricAvailable(context)) {
-                                Toast.makeText(
-                                    context,
-                                    "Configure uma digital ou bloqueio de tela nas configurações do Android.",
-                                    Toast.LENGTH_LONG
-                                ).show()
-                            } else {
-                                val nextState = !isBiometricEnabled
-                                BiometricAuthHelper.setBiometricEnabled(context, nextState)
-                                isBiometricEnabled = nextState
-                                isAppUnlocked = true
-                                val msg = if (nextState) {
-                                    "Proteção por Biometria ATIVADA!"
-                                } else {
-                                    "Proteção por Biometria DESATIVADA."
-                                }
-                                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-                            }
-                        }
-                    ) {
-                        Icon(
-                            imageVector = if (isBiometricEnabled) Icons.Default.Fingerprint else Icons.Default.Lock,
-                            contentDescription = "Bloqueio Biométrico",
-                            tint = if (isBiometricEnabled) {
-                                MaterialTheme.colorScheme.primary
-                            } else {
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                            }
                         )
                     }
 
@@ -332,10 +356,12 @@ fun FinancIAAppRoot(
                         }
                     }
 
-                    IconButton(onClick = viewModel::signOut) {
+                    IconButton(onClick = { currentTab = MainTab.PROFILE }) {
                         Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ExitToApp,
-                            contentDescription = "Sair da conta"
+                            imageVector = Icons.Default.Person,
+                            contentDescription = "Abrir Painel de Perfil & Casal",
+                            tint = if (currentTab == MainTab.PROFILE) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 },
@@ -350,25 +376,31 @@ fun FinancIAAppRoot(
                     selected = currentTab == MainTab.DASHBOARD,
                     onClick = { currentTab = MainTab.DASHBOARD },
                     icon = { Icon(Icons.Default.AccountBalanceWallet, contentDescription = null) },
-                    label = { Text("Início") }
+                    label = { Text(MainTab.DASHBOARD.labelForLanguage(langCode)) }
                 )
                 NavigationBarItem(
                     selected = currentTab == MainTab.FIXED_AND_DEBTS,
                     onClick = { currentTab = MainTab.FIXED_AND_DEBTS },
                     icon = { Icon(Icons.Default.AccountBalance, contentDescription = null) },
-                    label = { Text("Fixas/Dívidas") }
+                    label = { Text(MainTab.FIXED_AND_DEBTS.labelForLanguage(langCode)) }
                 )
                 NavigationBarItem(
                     selected = currentTab == MainTab.SMART_ADD,
                     onClick = { currentTab = MainTab.SMART_ADD },
                     icon = { Icon(Icons.Default.AutoAwesome, contentDescription = null) },
-                    label = { Text("Lançar IA") }
+                    label = { Text(MainTab.SMART_ADD.labelForLanguage(langCode)) }
                 )
                 NavigationBarItem(
                     selected = currentTab == MainTab.ADVISOR,
                     onClick = { currentTab = MainTab.ADVISOR },
                     icon = { Icon(Icons.Default.ChatBubbleOutline, contentDescription = null) },
-                    label = { Text("Consultor") }
+                    label = { Text(MainTab.ADVISOR.labelForLanguage(langCode)) }
+                )
+                NavigationBarItem(
+                    selected = currentTab == MainTab.PROFILE,
+                    onClick = { currentTab = MainTab.PROFILE },
+                    icon = { Icon(Icons.Default.Person, contentDescription = null) },
+                    label = { Text(MainTab.PROFILE.labelForLanguage(langCode)) }
                 )
             }
         }
@@ -392,6 +424,10 @@ fun FinancIAAppRoot(
                         selectedCategory = uiState.selectedCategoryFilter,
                         monthlyBudget = monthlyBudget,
                         isPrivacyMode = uiState.isPrivacyMode,
+                        sharedSpaceId = profileConfig.sharedSpaceId,
+                        isViewingSharedSpace = uiState.isViewingSharedCoupleSpace,
+                        onToggleSharedSpaceView = viewModel::toggleSharedCoupleView,
+                        onOpenProfile = { currentTab = MainTab.PROFILE },
                         onPreviousMonth = viewModel::previousMonth,
                         onNextMonth = viewModel::nextMonth,
                         onSearchQueryChange = viewModel::setSearchQuery,
@@ -450,6 +486,8 @@ fun FinancIAAppRoot(
                         isProcessingAi = uiState.isProcessingAi,
                         aiStatusMessage = uiState.aiStatusMessage,
                         pendingAiDraft = uiState.pendingAiDraft,
+                        customAccounts = profileConfig.customAccounts,
+                        customCategories = profileConfig.customCategories,
                         onAnalyzeText = viewModel::processNaturalLanguageInput,
                         onAnalyzeReceiptBitmap = viewModel::processReceiptPhoto,
                         onAutoCategorize = viewModel::autoCategorizeTitle,
@@ -467,6 +505,32 @@ fun FinancIAAppRoot(
                         isThinking = uiState.isAdvisorThinking,
                         onSendMessage = viewModel::sendAdvisorMessage,
                         onClearChat = viewModel::clearAdvisorChat
+                    )
+                }
+
+                MainTab.PROFILE -> {
+                    ProfileAndSharingScreen(
+                        profileConfig = profileConfig,
+                        monthTransactions = monthTransactions,
+                        achievements = achievements,
+                        isViewingSharedSpace = uiState.isViewingSharedCoupleSpace,
+                        isPrivacyMode = uiState.isPrivacyMode,
+                        isBiometricEnabled = isBiometricEnabled,
+                        themeMode = uiState.themeMode,
+                        onSaveProfile = viewModel::saveUserProfileConfig,
+                        onCreateOrJoinSharedSpace = viewModel::createOrJoinSharedSpace,
+                        onLeaveSharedSpace = viewModel::leaveSharedSpace,
+                        onToggleSharedSpaceView = viewModel::toggleSharedCoupleView,
+                        onTogglePrivacyMode = viewModel::togglePrivacyMode,
+                        onToggleBiometric = toggleBiometricAction,
+                        onCycleThemeMode = viewModel::cycleThemeMode,
+                        onRunCoupleAiMeeting = {
+                            currentTab = MainTab.ADVISOR
+                            viewModel.sendAdvisorMessage(
+                                "Faça nossa Reunião Financeira do Casal deste mês! Analise nossas despesas fixas (água, luz, moradia), gastos variáveis, empréstimos e a divisão entre nós (${profileConfig.coupleSplitMode}), e dê 3 recomendações práticas para o casal economizar e atingir nossas metas juntos."
+                            )
+                        },
+                        onSignOut = viewModel::signOut
                     )
                 }
             }

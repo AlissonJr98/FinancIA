@@ -13,10 +13,19 @@ rules_version = '2';
 //   - displayName: string (optional, <= 120 chars) - User display name
 //   - monthlyBudget: number (optional, >= 0) - Monthly budget goal
 //   - categoryBudgets: map (optional, <= 30 entries) - Map of category name to number budget limit
-//   - currency: string (optional, 1-10 chars) - Currency code/symbol (e.g., 'BRL', 'USD')
+//   - currency: string (optional, 1-10 chars) - Currency code/symbol (e.g., 'BRL', 'USD', 'EUR')
+//   - language: string (optional, <= 15 chars) - Language code (e.g., 'pt-BR', 'en-US', 'es-ES')
+//   - baseSalary: number (optional, >= 0) - User base monthly salary/income
+//   - partnerSalary: number (optional, >= 0) - Partner monthly salary/income for proportional split
+//   - payDay: int (optional, 1..31) - Day of month salary is received
+//   - sharedSpaceId: string (optional, <= 64 chars) - Couple/Family shared space code (e.g., 'CASAL-4829')
+//   - coupleSplitMode: string (optional, <= 30 chars) - Couple expense split mode ('FIFTY_FIFTY' or 'PROPORTIONAL')
+//   - customAccounts: list (optional, <= 30 items) - User-defined custom bank/wallet account names
+//   - customCategories: list (optional, <= 30 items) - User-defined custom transaction categories
 //   - updatedAt: number or timestamp (optional) - Last modification timestamp
 //
 // Subcollection: /users/{userId}/transactions/{transactionId}
+//   (Also mirrored in /sharedSpaces/{spaceId}/transactions/{transactionId})
 // Document ID: {transactionId}
 // Fields:
 //   - title: string (required, 1-200 chars) - Transaction title/description
@@ -36,8 +45,11 @@ rules_version = '2';
 //   - fixedBillId: string (optional, <= 128 chars) - Linked fixed bill template ID
 //   - loanId: string (optional, <= 128 chars) - Linked loan/financing ID
 //   - accountName: string (optional, <= 80 chars) - Bank/wallet account name (e.g., 'Nubank', 'Inter', 'Itaú', 'Carteira')
+//   - authorName: string (optional, <= 120 chars) - Name of the user who added the transaction
+//   - authorUid: string (optional, <= 128 chars) - UID of the user who added the transaction
 //
 // Subcollection: /users/{userId}/fixedBills/{billId}
+//   (Also mirrored in /sharedSpaces/{spaceId}/fixedBills/{billId})
 // Document ID: {billId}
 // Fields:
 //   - id: string (optional, <= 128 chars) - Document identifier
@@ -48,9 +60,12 @@ rules_version = '2';
 //   - isFixedValue: bool (required) - Whether value is fixed or variable each month
 //   - monthlyValues: map (optional, <= 240 entries) - Map of YYYY-MM to monthly amount
 //   - paidMonths: map (optional, <= 240 entries) - Map of YYYY-MM to payment status/txId
+//   - authorName: string (optional, <= 120 chars) - Name of the user who created/updated the fixed bill
+//   - authorUid: string (optional, <= 128 chars) - UID of the user who created/updated the fixed bill
 //   - createdAt: number or timestamp (optional, immutable if present) - Creation timestamp
 //
 // Subcollection: /users/{userId}/loans/{loanId}
+//   (Also mirrored in /sharedSpaces/{spaceId}/loans/{loanId})
 // Document ID: {loanId}
 // Fields:
 //   - id: string (optional, <= 128 chars) - Document identifier
@@ -63,9 +78,12 @@ rules_version = '2';
 //   - interestRateMonthly: number (optional, >= 0) - Monthly interest rate (%)
 //   - notes: string (optional, <= 500 chars) - Additional contract notes
 //   - lastPaidMonthKey: string (optional, <= 20 chars) - Last paid YYYY-MM key
+//   - authorName: string (optional, <= 120 chars) - Name of the user who created/updated the loan
+//   - authorUid: string (optional, <= 128 chars) - UID of the user who created/updated the loan
 //   - createdAt: number or timestamp (optional, immutable if present) - Creation timestamp
 //
 // Subcollection: /users/{userId}/savingsGoals/{goalId}
+//   (Also mirrored in /sharedSpaces/{spaceId}/savingsGoals/{goalId})
 // Document ID: {goalId}
 // Fields:
 //   - id: string (optional, <= 128 chars) - Document identifier
@@ -73,9 +91,12 @@ rules_version = '2';
 //   - targetAmount: number (required, > 0) - Target savings amount
 //   - currentAmount: number (required, >= 0) - Current accumulated amount
 //   - deadlineNote: string (optional, <= 100 chars) - Optional target date or note
+//   - authorName: string (optional, <= 120 chars) - Name of the user who created/updated the goal
+//   - authorUid: string (optional, <= 128 chars) - UID of the user who created/updated the goal
 //   - createdAt: number or timestamp (optional, immutable if present) - Creation timestamp
 //
 // Subcollection: /users/{userId}/receivables/{receivableId}
+//   (Also mirrored in /sharedSpaces/{spaceId}/receivables/{receivableId})
 // Document ID: {receivableId}
 // Fields:
 //   - id: string (optional, 1-128 chars, immutable if present) - Document identifier
@@ -87,6 +108,7 @@ rules_version = '2';
 //   - createdAt: int, number, or timestamp (optional, immutable if present) - Creation timestamp
 //
 // Subcollection: /users/{userId}/wishlist/{wishId}
+//   (Also mirrored in /sharedSpaces/{spaceId}/wishlist/{wishId})
 // Document ID: {wishId}
 // Fields:
 //   - id: string (optional, 1-128 chars, immutable if present) - Document identifier
@@ -98,11 +120,27 @@ rules_version = '2';
 //   - createdAt: int, number, or timestamp (optional, immutable if present) - Creation timestamp
 //
 // Subcollection: /users/{userId}/chatMessages/{messageId}
+//   (Also mirrored in /sharedSpaces/{spaceId}/chatMessages/{messageId})
 // Document ID: {messageId}
 // Fields:
 //   - role: string (required, enum: ['user', 'model']) - Chat message author role
 //   - content: string (required, 1-8000 chars) - Chat message text
 //   - timestamp: number (required) - Message creation timestamp (epoch ms)
+//
+// Collection: /sharedSpaces/{spaceId}
+// Document ID: {spaceId} (Shared invite code, e.g., 'CASAL-4829')
+// Fields:
+//   - spaceId: string (optional, <= 64 chars) - Shared invite code identifier
+//   - spaceName: string (optional, <= 120 chars) - Shared workspace display name
+//   - ownerUid: string (optional, <= 128 chars) - Creator user UID
+//   - ownerName: string (optional, <= 120 chars) - Creator display name
+//   - partnerName: string (optional, <= 120 chars) - Partner display name
+//   - memberUids: list (optional, <= 20 items) - List of member UIDs in the shared space
+//   - splitMode: string (optional, <= 30 chars) - Split mode ('FIFTY_FIFTY' or 'PROPORTIONAL')
+//   - ownerIncome: number (optional, >= 0) - Creator monthly income for proportional split
+//   - partnerIncome: number (optional, >= 0) - Partner monthly income for proportional split
+//   - updatedAt: number or timestamp (optional) - Last modification timestamp
+//   - createdAt: number or timestamp (optional) - Creation timestamp
 //
 // ===============================================================
 
@@ -116,6 +154,11 @@ service cloud.firestore {
     // Check if the user is authenticated
     function isAuthenticated() {
       return request.auth != null;
+    }
+
+    // Alias for authenticated check
+    function isSignedIn() {
+      return isAuthenticated();
     }
 
     // Check if user owns the resource (for user-scoped documents)
@@ -173,7 +216,11 @@ service cloud.firestore {
 
     // Validate User Profile document (/users/{userId})
     function isValidUserProfile(data) {
-      let allowedFields = ['email', 'displayName', 'monthlyBudget', 'categoryBudgets', 'currency', 'updatedAt'];
+      let allowedFields = [
+        'email', 'displayName', 'monthlyBudget', 'categoryBudgets', 'currency', 'updatedAt',
+        'language', 'baseSalary', 'partnerSalary', 'payDay', 'sharedSpaceId',
+        'coupleSplitMode', 'customAccounts', 'customCategories'
+      ];
       return hasOnlyAllowedFields(allowedFields) &&
         data.keys().size() > 0 &&
         (!('email' in data) || isValidEmail(data.email)) &&
@@ -181,17 +228,48 @@ service cloud.firestore {
         (!('monthlyBudget' in data) || (data.monthlyBudget is number && data.monthlyBudget >= 0)) &&
         (!('categoryBudgets' in data) || (data.categoryBudgets is map && data.categoryBudgets.size() <= 30)) &&
         isValidOptionalString('currency', 1, 10) &&
+        isValidOptionalString('language', 0, 15) &&
+        (!('baseSalary' in data) || (data.baseSalary is number && data.baseSalary >= 0)) &&
+        (!('partnerSalary' in data) || (data.partnerSalary is number && data.partnerSalary >= 0)) &&
+        (!('payDay' in data) || (data.payDay is int && data.payDay >= 1 && data.payDay <= 31)) &&
+        isValidOptionalString('sharedSpaceId', 0, 64) &&
+        isValidOptionalString('coupleSplitMode', 0, 30) &&
+        (!('customAccounts' in data) || (data.customAccounts is list && data.customAccounts.size() <= 30)) &&
+        (!('customCategories' in data) || (data.customCategories is list && data.customCategories.size() <= 30)) &&
         (!('updatedAt' in data) || isNumberOrTimestamp(data.updatedAt));
     }
 
-    // Validate Transaction document (/users/{userId}/transactions/{transactionId})
+    // Validate Shared Space metadata document (/sharedSpaces/{spaceId})
+    function isValidSharedSpace(data) {
+      let allowedFields = [
+        'spaceId', 'spaceName', 'ownerUid', 'ownerName', 'partnerName',
+        'memberUids', 'splitMode', 'ownerIncome', 'partnerIncome',
+        'updatedAt', 'createdAt'
+      ];
+      return hasOnlyAllowedFields(allowedFields) &&
+        data.keys().size() > 0 &&
+        isValidOptionalString('spaceId', 0, 64) &&
+        isValidOptionalString('spaceName', 0, 120) &&
+        isValidOptionalString('ownerUid', 0, 128) &&
+        isValidOptionalString('ownerName', 0, 120) &&
+        isValidOptionalString('partnerName', 0, 120) &&
+        (!('memberUids' in data) || (data.memberUids is list && data.memberUids.size() <= 20)) &&
+        isValidOptionalString('splitMode', 0, 30) &&
+        (!('ownerIncome' in data) || (data.ownerIncome is number && data.ownerIncome >= 0)) &&
+        (!('partnerIncome' in data) || (data.partnerIncome is number && data.partnerIncome >= 0)) &&
+        (!('updatedAt' in data) || isNumberOrTimestamp(data.updatedAt)) &&
+        (!('createdAt' in data) || isNumberOrTimestamp(data.createdAt));
+    }
+
+    // Validate Transaction document
     function isValidTransaction(data) {
       let requiredFields = ['title', 'amount', 'type', 'category', 'dateTimestamp'];
       let allowedFields = [
         'title', 'amount', 'type', 'category', 'dateTimestamp',
         'id', 'notes', 'paymentMethod', 'createdByAi', 'createdAt',
         'isRecurring', 'installmentCount', 'installmentIndex',
-        'expenseNature', 'fixedBillId', 'loanId', 'accountName'
+        'expenseNature', 'fixedBillId', 'loanId', 'accountName',
+        'authorName', 'authorUid'
       ];
       return hasRequiredFields(requiredFields) &&
         hasOnlyAllowedFields(allowedFields) &&
@@ -211,15 +289,18 @@ service cloud.firestore {
         (!('expenseNature' in data) || (data.expenseNature is string && data.expenseNature in ['FIXED', 'VARIABLE', 'DEBT'])) &&
         isValidOptionalString('fixedBillId', 0, 128) &&
         isValidOptionalString('loanId', 0, 128) &&
-        isValidOptionalString('accountName', 0, 80);
+        isValidOptionalString('accountName', 0, 80) &&
+        isValidOptionalString('authorName', 0, 120) &&
+        isValidOptionalString('authorUid', 0, 128);
     }
 
-    // Validate Fixed Bill Template document (/users/{userId}/fixedBills/{billId})
+    // Validate Fixed Bill Template document
     function isValidFixedBill(data) {
       let requiredFields = ['name', 'category', 'dueDay', 'defaultAmount', 'isFixedValue'];
       let allowedFields = [
         'id', 'name', 'category', 'dueDay', 'defaultAmount',
-        'isFixedValue', 'monthlyValues', 'paidMonths', 'createdAt'
+        'isFixedValue', 'monthlyValues', 'paidMonths', 'createdAt',
+        'authorName', 'authorUid'
       ];
       return hasRequiredFields(requiredFields) &&
         hasOnlyAllowedFields(allowedFields) &&
@@ -231,10 +312,12 @@ service cloud.firestore {
         (data.isFixedValue is bool) &&
         (!('monthlyValues' in data) || (data.monthlyValues is map && data.monthlyValues.size() <= 240)) &&
         (!('paidMonths' in data) || (data.paidMonths is map && data.paidMonths.size() <= 240)) &&
+        isValidOptionalString('authorName', 0, 120) &&
+        isValidOptionalString('authorUid', 0, 128) &&
         (!('createdAt' in data) || isNumberOrTimestamp(data.createdAt));
     }
 
-    // Validate Loan / Financing document (/users/{userId}/loans/{loanId})
+    // Validate Loan / Financing document
     function isValidLoan(data) {
       let requiredFields = [
         'title', 'loanType', 'installmentAmount',
@@ -243,7 +326,8 @@ service cloud.firestore {
       let allowedFields = [
         'id', 'title', 'loanType', 'installmentAmount',
         'totalInstallments', 'paidInstallments', 'dueDay',
-        'interestRateMonthly', 'notes', 'lastPaidMonthKey', 'createdAt'
+        'interestRateMonthly', 'notes', 'lastPaidMonthKey', 'createdAt',
+        'authorName', 'authorUid'
       ];
       return hasRequiredFields(requiredFields) &&
         hasOnlyAllowedFields(allowedFields) &&
@@ -257,14 +341,17 @@ service cloud.firestore {
         (!('interestRateMonthly' in data) || (data.interestRateMonthly is number && data.interestRateMonthly >= 0)) &&
         isValidOptionalString('notes', 0, 500) &&
         isValidOptionalString('lastPaidMonthKey', 0, 20) &&
+        isValidOptionalString('authorName', 0, 120) &&
+        isValidOptionalString('authorUid', 0, 128) &&
         (!('createdAt' in data) || isNumberOrTimestamp(data.createdAt));
     }
 
-    // Validate Savings Goal / Caixinha document (/users/{userId}/savingsGoals/{goalId})
+    // Validate Savings Goal / Caixinha document
     function isValidSavingsGoal(data) {
       let requiredFields = ['title', 'targetAmount', 'currentAmount'];
       let allowedFields = [
-        'id', 'title', 'targetAmount', 'currentAmount', 'deadlineNote', 'createdAt'
+        'id', 'title', 'targetAmount', 'currentAmount', 'deadlineNote', 'createdAt',
+        'authorName', 'authorUid'
       ];
       return hasRequiredFields(requiredFields) &&
         hasOnlyAllowedFields(allowedFields) &&
@@ -273,10 +360,12 @@ service cloud.firestore {
         (data.targetAmount is number && data.targetAmount > 0) &&
         (data.currentAmount is number && data.currentAmount >= 0) &&
         isValidOptionalString('deadlineNote', 0, 100) &&
+        isValidOptionalString('authorName', 0, 120) &&
+        isValidOptionalString('authorUid', 0, 128) &&
         (!('createdAt' in data) || isNumberOrTimestamp(data.createdAt));
     }
 
-    // Validate Receivable ("Quem me deve / A Receber") document (/users/{userId}/receivables/{receivableId})
+    // Validate Receivable ("Quem me deve / A Receber") document
     function isValidReceivable(data) {
       let requiredFields = ['personName', 'description', 'amount', 'isReceived'];
       let allowedFields = [
@@ -293,7 +382,7 @@ service cloud.firestore {
         (!('createdAt' in data) || data.createdAt is int || isNumberOrTimestamp(data.createdAt));
     }
 
-    // Validate Wishlist ("Lista de Compras / Desejos Planejados") document (/users/{userId}/wishlist/{wishId})
+    // Validate Wishlist ("Lista de Compras / Desejos Planejados") document
     function isValidWishlistItem(data) {
       let requiredFields = ['title', 'totalPrice', 'installments'];
       let allowedFields = [
@@ -310,7 +399,7 @@ service cloud.firestore {
         (!('createdAt' in data) || data.createdAt is int || isNumberOrTimestamp(data.createdAt));
     }
 
-    // Validate AI Chat Message document (/users/{userId}/chatMessages/{messageId})
+    // Validate AI Chat Message document
     function isValidChatMessage(data) {
       let requiredFields = ['role', 'content', 'timestamp'];
       let allowedFields = ['role', 'content', 'timestamp'];
@@ -325,7 +414,7 @@ service cloud.firestore {
     // Collection Rules
     // ===============================================================
 
-    // 1. User Profile Document
+    // 1. User Profile Document & Personal Subcollections
     match /users/{userId} {
       allow read: if isOwner(userId);
       allow create: if isOwner(userId) && isValidUserProfile(request.resource.data);
@@ -422,7 +511,104 @@ service cloud.firestore {
       }
     }
 
-    // 9. Default Deny for all other paths
+    // 9. Couple / Family Shared Workspaces (/sharedSpaces/{spaceId})
+    match /sharedSpaces/{spaceId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && isValidSharedSpace(request.resource.data);
+      allow update: if isSignedIn() && isValidSharedSpace(request.resource.data);
+      allow delete: if isSignedIn();
+
+      // Shared Transactions Subcollection
+      match /transactions/{transactionId} {
+        allow read: if isSignedIn();
+        allow create: if isSignedIn() &&
+          isValidTransaction(request.resource.data) &&
+          (!('id' in request.resource.data) || request.resource.data.id == transactionId);
+        allow update: if isSignedIn() &&
+          isValidTransaction(request.resource.data) &&
+          (!('id' in request.resource.data) || request.resource.data.id == transactionId) &&
+          isImmutableFieldUnchanged('id') &&
+          isImmutableFieldUnchanged('createdAt');
+        allow delete: if isSignedIn();
+      }
+
+      // Shared Fixed Bills Subcollection
+      match /fixedBills/{billId} {
+        allow read: if isSignedIn();
+        allow create: if isSignedIn() &&
+          isValidFixedBill(request.resource.data) &&
+          (!('id' in request.resource.data) || request.resource.data.id == '' || request.resource.data.id == billId);
+        allow update: if isSignedIn() &&
+          isValidFixedBill(request.resource.data) &&
+          (!('id' in request.resource.data) || request.resource.data.id == '' || request.resource.data.id == billId) &&
+          isImmutableFieldUnchanged('createdAt');
+        allow delete: if isSignedIn();
+      }
+
+      // Shared Loans & Financing Subcollection
+      match /loans/{loanId} {
+        allow read: if isSignedIn();
+        allow create: if isSignedIn() &&
+          isValidLoan(request.resource.data) &&
+          (!('id' in request.resource.data) || request.resource.data.id == '' || request.resource.data.id == loanId);
+        allow update: if isSignedIn() &&
+          isValidLoan(request.resource.data) &&
+          (!('id' in request.resource.data) || request.resource.data.id == '' || request.resource.data.id == loanId) &&
+          isImmutableFieldUnchanged('createdAt');
+        allow delete: if isSignedIn();
+      }
+
+      // Shared Savings Goals (Caixinhas) Subcollection
+      match /savingsGoals/{goalId} {
+        allow read: if isSignedIn();
+        allow create: if isSignedIn() &&
+          isValidSavingsGoal(request.resource.data) &&
+          (!('id' in request.resource.data) || request.resource.data.id == '' || request.resource.data.id == goalId);
+        allow update: if isSignedIn() &&
+          isValidSavingsGoal(request.resource.data) &&
+          (!('id' in request.resource.data) || request.resource.data.id == '' || request.resource.data.id == goalId) &&
+          isImmutableFieldUnchanged('createdAt');
+        allow delete: if isSignedIn();
+      }
+
+      // Shared Receivables Subcollection
+      match /receivables/{receivableId} {
+        allow read: if isSignedIn();
+        allow create: if isSignedIn() &&
+          isValidReceivable(request.resource.data) &&
+          (!('id' in request.resource.data) || request.resource.data.id == receivableId);
+        allow update: if isSignedIn() &&
+          isValidReceivable(request.resource.data) &&
+          (!('id' in request.resource.data) || request.resource.data.id == receivableId) &&
+          isImmutableFieldUnchanged('id') &&
+          isImmutableFieldUnchanged('createdAt');
+        allow delete: if isSignedIn();
+      }
+
+      // Shared Wishlist Subcollection
+      match /wishlist/{wishId} {
+        allow read: if isSignedIn();
+        allow create: if isSignedIn() &&
+          isValidWishlistItem(request.resource.data) &&
+          (!('id' in request.resource.data) || request.resource.data.id == wishId);
+        allow update: if isSignedIn() &&
+          isValidWishlistItem(request.resource.data) &&
+          (!('id' in request.resource.data) || request.resource.data.id == wishId) &&
+          isImmutableFieldUnchanged('id') &&
+          isImmutableFieldUnchanged('createdAt');
+        allow delete: if isSignedIn();
+      }
+
+      // Shared AI Chat History Subcollection
+      match /chatMessages/{messageId} {
+        allow read: if isSignedIn();
+        allow create: if isSignedIn() && isValidChatMessage(request.resource.data);
+        allow update: if false;
+        allow delete: if isSignedIn();
+      }
+    }
+
+    // 10. Default Deny for all other paths
     match /{document=**} {
       allow read, write: if false;
     }

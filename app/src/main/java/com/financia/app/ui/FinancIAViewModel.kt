@@ -8,6 +8,7 @@ import androidx.lifecycle.viewModelScope
 import com.financia.app.core.importer.BankStatementImporter
 import com.financia.app.core.update.AppUpdateInfo
 import com.financia.app.core.update.GitHubUpdateChecker
+import com.financia.app.data.model.AchievementBadge
 import com.financia.app.data.model.AiExtractedTransaction
 import com.financia.app.data.model.ChatMessage
 import com.financia.app.data.model.ExpenseNature
@@ -20,6 +21,7 @@ import com.financia.app.data.model.ReceivableItem
 import com.financia.app.data.model.SavingsGoal
 import com.financia.app.data.model.TransactionCategory
 import com.financia.app.data.model.TransactionType
+import com.financia.app.data.model.UserProfileConfig
 import com.financia.app.data.model.WishlistItem
 import com.financia.app.data.repository.AiFinancialRepository
 import com.financia.app.data.repository.AuthRepository
@@ -57,6 +59,7 @@ data class FinancIAUiState(
     val selectedYear: Int = Calendar.getInstance().get(Calendar.YEAR),
     val isPrivacyMode: Boolean = false,
     val themeMode: AppThemeMode = AppThemeMode.DARK_AMOLED,
+    val isViewingSharedCoupleSpace: Boolean = true,
     val lastDeletedTransaction: FinancialTransaction? = null,
     // OTA Update States
     val updateInfo: AppUpdateInfo? = null,
@@ -83,10 +86,37 @@ class FinancIAViewModel @Inject constructor(
     val currentUser: StateFlow<FirebaseUser?> = authRepository.authStateFlow
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), authRepository.currentUser)
 
-    val allTransactions: StateFlow<List<FinancialTransaction>> = currentUser
+    val userProfileConfig: StateFlow<UserProfileConfig> = currentUser
         .flatMapLatest { user ->
             if (user != null) {
-                transactionRepository.observeTransactions(user.uid)
+                authRepository.observeUserProfileConfig(user.uid)
+            } else {
+                flowOf(UserProfileConfig())
+            }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), UserProfileConfig())
+
+    /**
+     * Resolve o `sharedSpaceId` ativo (se o usuário está conectado a um espaço de casal e com a chave ativada).
+     */
+    private val activeSpaceFlow: StateFlow<Pair<String?, String>> = combine(
+        currentUser,
+        userProfileConfig,
+        _uiState
+    ) { user, profile, state ->
+        val uid = user?.uid
+        val spaceId = if (state.isViewingSharedCoupleSpace && profile.sharedSpaceId.isNotBlank()) {
+            profile.sharedSpaceId
+        } else {
+            ""
+        }
+        uid to spaceId
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null to "")
+
+    val allTransactions: StateFlow<List<FinancialTransaction>> = activeSpaceFlow
+        .flatMapLatest { (uid, spaceId) ->
+            if (uid != null) {
+                transactionRepository.observeTransactions(uid, spaceId)
             } else {
                 flowOf(emptyList())
             }
@@ -107,9 +137,6 @@ class FinancIAViewModel @Inject constructor(
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    /**
-     * Evolução dos últimos 6 meses (Receitas vs. Fixas/Dívidas vs. Variáveis) para o Gráfico de Barras.
-     */
     val sixMonthsHistoryStats: StateFlow<List<MonthlyBarStat>> = combine(
         allTransactions,
         _uiState
@@ -154,50 +181,50 @@ class FinancIAViewModel @Inject constructor(
         stats
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    val fixedBills: StateFlow<List<FixedBillTemplate>> = currentUser
-        .flatMapLatest { user ->
-            if (user != null) {
-                transactionRepository.observeFixedBills(user.uid)
+    val fixedBills: StateFlow<List<FixedBillTemplate>> = activeSpaceFlow
+        .flatMapLatest { (uid, spaceId) ->
+            if (uid != null) {
+                transactionRepository.observeFixedBills(uid, spaceId)
             } else {
                 flowOf(emptyList())
             }
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    val loans: StateFlow<List<LoanContract>> = currentUser
-        .flatMapLatest { user ->
-            if (user != null) {
-                transactionRepository.observeLoans(user.uid)
+    val loans: StateFlow<List<LoanContract>> = activeSpaceFlow
+        .flatMapLatest { (uid, spaceId) ->
+            if (uid != null) {
+                transactionRepository.observeLoans(uid, spaceId)
             } else {
                 flowOf(emptyList())
             }
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    val savingsGoals: StateFlow<List<SavingsGoal>> = currentUser
-        .flatMapLatest { user ->
-            if (user != null) {
-                transactionRepository.observeSavingsGoals(user.uid)
+    val savingsGoals: StateFlow<List<SavingsGoal>> = activeSpaceFlow
+        .flatMapLatest { (uid, spaceId) ->
+            if (uid != null) {
+                transactionRepository.observeSavingsGoals(uid, spaceId)
             } else {
                 flowOf(emptyList())
             }
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    val receivables: StateFlow<List<ReceivableItem>> = currentUser
-        .flatMapLatest { user ->
-            if (user != null) {
-                transactionRepository.observeReceivables(user.uid)
+    val receivables: StateFlow<List<ReceivableItem>> = activeSpaceFlow
+        .flatMapLatest { (uid, spaceId) ->
+            if (uid != null) {
+                transactionRepository.observeReceivables(uid, spaceId)
             } else {
                 flowOf(emptyList())
             }
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    val wishlist: StateFlow<List<WishlistItem>> = currentUser
-        .flatMapLatest { user ->
-            if (user != null) {
-                transactionRepository.observeWishlist(user.uid)
+    val wishlist: StateFlow<List<WishlistItem>> = activeSpaceFlow
+        .flatMapLatest { (uid, spaceId) ->
+            if (uid != null) {
+                transactionRepository.observeWishlist(uid, spaceId)
             } else {
                 flowOf(emptyList())
             }
@@ -224,9 +251,6 @@ class FinancIAViewModel @Inject constructor(
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
-    /**
-     * Projeção automática de gastos comprometidos para os próximos 3 meses (Fixas + Empréstimos + Parcelas).
-     */
     val futureProjections: StateFlow<List<FutureMonthProjection>> = combine(
         allTransactions,
         fixedBills,
@@ -280,10 +304,61 @@ class FinancIAViewModel @Inject constructor(
         projections
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    val chatMessages: StateFlow<List<ChatMessage>> = currentUser
-        .flatMapLatest { user ->
-            if (user != null) {
-                transactionRepository.observeChatMessages(user.uid)
+    /**
+     * Conquistas & Gamificação Financeira exibidas no Perfil.
+     */
+    val achievements: StateFlow<List<AchievementBadge>> = combine(
+        currentMonthTransactions,
+        fixedBills,
+        loans,
+        savingsGoals,
+        userProfileConfig
+    ) { monthTx, bills, loanList, goals, profile ->
+        val inc = monthTx.filter { it.isIncome }.sumOf { it.amount }
+        val exp = monthTx.filter { !it.isIncome }.sumOf { it.amount }
+        listOf(
+            AchievementBadge(
+                id = "blue_month",
+                title = "Mês no Azul",
+                description = "Receitas maiores que as despesas no mês atual",
+                emoji = "🏅",
+                isUnlocked = inc > 0 && inc >= exp
+            ),
+            AchievementBadge(
+                id = "fixed_bills_setup",
+                title = "Contas Fixas Organizadas",
+                description = "Cadastrou suas contas fixas (Água, Luz, Internet...)",
+                emoji = "💧",
+                isUnlocked = bills.isNotEmpty()
+            ),
+            AchievementBadge(
+                id = "debt_tracker",
+                title = "Estrategista de Dívidas",
+                description = "Controlando ou amortizando empréstimos e financiamentos",
+                emoji = "📉",
+                isUnlocked = loanList.any { it.paidInstallments > 0 }
+            ),
+            AchievementBadge(
+                id = "saver_box",
+                title = "Investidor do Futuro",
+                description = "Guardou dinheiro em pelo menos uma Caixinha/Meta",
+                emoji = "🐷",
+                isUnlocked = goals.any { it.currentAmount > 0 }
+            ),
+            AchievementBadge(
+                id = "couple_mode",
+                title = "Casal & Família Sincronizados",
+                description = "Ativou o Espaço Compartilhado em tempo real",
+                emoji = "💑",
+                isUnlocked = profile.sharedSpaceId.isNotBlank()
+            )
+        )
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val chatMessages: StateFlow<List<ChatMessage>> = activeSpaceFlow
+        .flatMapLatest { (uid, spaceId) ->
+            if (uid != null) {
+                transactionRepository.observeChatMessages(uid, spaceId)
             } else {
                 flowOf(emptyList())
             }
@@ -292,6 +367,32 @@ class FinancIAViewModel @Inject constructor(
 
     init {
         checkForGitHubUpdates(silent = true)
+    }
+
+    private fun currentActiveSpaceId(): String = activeSpaceFlow.value.second
+
+    fun toggleSharedCoupleView() {
+        _uiState.update { it.copy(isViewingSharedCoupleSpace = !it.isViewingSharedCoupleSpace) }
+    }
+
+    fun saveUserProfileConfig(config: UserProfileConfig) {
+        viewModelScope.launch {
+            authRepository.saveUserProfileConfig(config)
+        }
+    }
+
+    fun createOrJoinSharedSpace(code: String, partnerName: String = "") {
+        viewModelScope.launch {
+            transactionRepository.createOrJoinSharedSpace(code, partnerName)
+            _uiState.update { it.copy(isViewingSharedCoupleSpace = true) }
+        }
+    }
+
+    fun leaveSharedSpace() {
+        viewModelScope.launch {
+            transactionRepository.leaveSharedSpace()
+            _uiState.update { it.copy(isViewingSharedCoupleSpace = false) }
+        }
     }
 
     fun cycleThemeMode() {
@@ -537,7 +638,7 @@ class FinancIAViewModel @Inject constructor(
         return cal.timeInMillis
     }
 
-    // --- Transactions CRUD ---
+    // --- Transactions CRUD (Space-Aware) ---
 
     fun addManualTransaction(
         title: String,
@@ -567,9 +668,10 @@ class FinancIAViewModel @Inject constructor(
                 createdByAi = createdByAi,
                 isRecurring = isRecurring,
                 installmentCount = installmentCount.coerceIn(1, 360),
-                expenseNature = expenseNature
+                expenseNature = expenseNature,
+                authorName = userProfileConfig.value.displayName
             )
-            transactionRepository.addTransaction(tx)
+            transactionRepository.addTransaction(tx, currentActiveSpaceId())
             _uiState.update { it.copy(pendingAiDraft = null, aiStatusMessage = "Lançamento salvo na nuvem!") }
         }
     }
@@ -588,8 +690,12 @@ class FinancIAViewModel @Inject constructor(
                 aiRepository = aiRepository
             )
             val targetTime = selectedMonthTimestamp()
+            val spaceId = currentActiveSpaceId()
             parsedList.forEach { tx ->
-                transactionRepository.addTransaction(tx.copy(dateTimestamp = targetTime))
+                transactionRepository.addTransaction(
+                    tx.copy(dateTimestamp = targetTime, authorName = userProfileConfig.value.displayName),
+                    spaceId
+                )
             }
             onComplete(parsedList.size)
         }
@@ -597,14 +703,14 @@ class FinancIAViewModel @Inject constructor(
 
     fun updateExistingTransaction(transaction: FinancialTransaction) {
         viewModelScope.launch {
-            transactionRepository.updateTransaction(transaction)
+            transactionRepository.updateTransaction(transaction, currentActiveSpaceId())
         }
     }
 
     fun deleteTransaction(id: String) {
         val toDelete = allTransactions.value.firstOrNull { it.id == id }
         viewModelScope.launch {
-            transactionRepository.deleteTransaction(id)
+            transactionRepository.deleteTransaction(id, currentActiveSpaceId())
             if (toDelete != null) {
                 _uiState.update { it.copy(lastDeletedTransaction = toDelete) }
             }
@@ -614,7 +720,10 @@ class FinancIAViewModel @Inject constructor(
     fun undoDeleteTransaction() {
         val lastDeleted = _uiState.value.lastDeletedTransaction ?: return
         viewModelScope.launch {
-            transactionRepository.addTransaction(lastDeleted.copy(id = "", installmentCount = 1))
+            transactionRepository.addTransaction(
+                lastDeleted.copy(id = "", installmentCount = 1),
+                currentActiveSpaceId()
+            )
             _uiState.update { it.copy(lastDeletedTransaction = null) }
         }
     }
@@ -630,29 +739,18 @@ class FinancIAViewModel @Inject constructor(
                 dateTimestamp = System.currentTimeMillis(),
                 installmentCount = 1,
                 installmentIndex = 1,
+                authorName = userProfileConfig.value.displayName,
                 createdAt = System.currentTimeMillis()
             )
-            transactionRepository.addTransaction(copyTx)
+            transactionRepository.addTransaction(copyTx, currentActiveSpaceId())
         }
     }
 
-    fun saveWishlistItem(item: WishlistItem) {
-        viewModelScope.launch {
-            transactionRepository.saveWishlistItem(item)
-        }
-    }
-
-    fun deleteWishlistItem(itemId: String) {
-        viewModelScope.launch {
-            transactionRepository.deleteWishlistItem(itemId)
-        }
-    }
-
-    // --- Contas Fixas, Empréstimos, Caixinhas e Valores A Receber ---
+    // --- Contas Fixas, Empréstimos, Caixinhas, A Receber & Wishlist ---
 
     fun saveFixedBill(bill: FixedBillTemplate) {
         viewModelScope.launch {
-            transactionRepository.saveFixedBill(bill)
+            transactionRepository.saveFixedBill(bill, currentActiveSpaceId())
         }
     }
 
@@ -662,20 +760,21 @@ class FinancIAViewModel @Inject constructor(
                 bill = bill,
                 monthKey = monthKey,
                 amountForThisMonth = amount,
-                targetTimestamp = selectedMonthTimestamp()
+                targetTimestamp = selectedMonthTimestamp(),
+                sharedSpaceId = currentActiveSpaceId()
             )
         }
     }
 
     fun deleteFixedBill(billId: String) {
         viewModelScope.launch {
-            transactionRepository.deleteFixedBill(billId)
+            transactionRepository.deleteFixedBill(billId, currentActiveSpaceId())
         }
     }
 
     fun saveLoanContract(loan: LoanContract) {
         viewModelScope.launch {
-            transactionRepository.saveLoanContract(loan)
+            transactionRepository.saveLoanContract(loan, currentActiveSpaceId())
         }
     }
 
@@ -693,44 +792,57 @@ class FinancIAViewModel @Inject constructor(
                 customPaidAmount = customPaidAmount,
                 monthKey = monthKey,
                 targetTimestamp = selectedMonthTimestamp(),
-                isAmortization = isAmortization
+                isAmortization = isAmortization,
+                sharedSpaceId = currentActiveSpaceId()
             )
         }
     }
 
     fun deleteLoanContract(loanId: String) {
         viewModelScope.launch {
-            transactionRepository.deleteLoanContract(loanId)
+            transactionRepository.deleteLoanContract(loanId, currentActiveSpaceId())
         }
     }
 
     fun saveSavingsGoal(goal: SavingsGoal) {
         viewModelScope.launch {
-            transactionRepository.saveSavingsGoal(goal)
+            transactionRepository.saveSavingsGoal(goal, currentActiveSpaceId())
         }
     }
 
     fun deleteSavingsGoal(goalId: String) {
         viewModelScope.launch {
-            transactionRepository.deleteSavingsGoal(goalId)
+            transactionRepository.deleteSavingsGoal(goalId, currentActiveSpaceId())
         }
     }
 
     fun saveReceivable(item: ReceivableItem) {
         viewModelScope.launch {
-            transactionRepository.saveReceivable(item)
+            transactionRepository.saveReceivable(item, currentActiveSpaceId())
         }
     }
 
     fun markReceivableAsPaid(item: ReceivableItem) {
         viewModelScope.launch {
-            transactionRepository.markReceivableAsPaid(item, selectedMonthTimestamp())
+            transactionRepository.markReceivableAsPaid(item, selectedMonthTimestamp(), currentActiveSpaceId())
         }
     }
 
     fun deleteReceivable(itemId: String) {
         viewModelScope.launch {
-            transactionRepository.deleteReceivable(itemId)
+            transactionRepository.deleteReceivable(itemId, currentActiveSpaceId())
+        }
+    }
+
+    fun saveWishlistItem(item: WishlistItem) {
+        viewModelScope.launch {
+            transactionRepository.saveWishlistItem(item, currentActiveSpaceId())
+        }
+    }
+
+    fun deleteWishlistItem(itemId: String) {
+        viewModelScope.launch {
+            transactionRepository.deleteWishlistItem(itemId, currentActiveSpaceId())
         }
     }
 
@@ -804,13 +916,15 @@ class FinancIAViewModel @Inject constructor(
         _uiState.update { it.copy(pendingAiDraft = null, aiStatusMessage = null) }
     }
 
-    // --- AI Financial Advisor & Debt Snowball Simulator ---
+    // --- AI Financial Advisor & Couple Advisor ---
 
     fun sendAdvisorMessage(question: String) {
         if (question.isBlank()) return
         viewModelScope.launch {
+            val spaceId = currentActiveSpaceId()
+            val profile = userProfileConfig.value
             val userMsg = ChatMessage(role = "user", content = question.trim())
-            transactionRepository.saveChatMessage(userMsg)
+            transactionRepository.saveChatMessage(userMsg, spaceId)
             _uiState.update { it.copy(isAdvisorThinking = true) }
 
             val currentTx = currentMonthTransactions.value
@@ -818,8 +932,14 @@ class FinancIAViewModel @Inject constructor(
             val currentLoans = loans.value
             val budget = monthlyBudget.value
 
+            val langInstruction = when (profile.languageCode) {
+                "en-US" -> "Please reply in English (en-US)."
+                "es-ES" -> "Por favor responde en Español (es-ES)."
+                else -> "Responda em Português do Brasil (pt-BR)."
+            }
+
             val responseResult = aiRepository.askFinancialAdvisorWithActions(
-                userQuestion = question,
+                userQuestion = "$question ($langInstruction)",
                 transactions = currentTx,
                 fixedBills = currentBills,
                 loans = currentLoans,
@@ -845,9 +965,10 @@ class FinancIAViewModel @Inject constructor(
                                 createdByAi = true,
                                 isRecurring = extracted.isRecurring,
                                 installmentCount = extracted.installmentCount.coerceIn(1, 360),
-                                expenseNature = extracted.expenseNature
+                                expenseNature = extracted.expenseNature,
+                                authorName = profile.displayName
                             )
-                            transactionRepository.addTransaction(tx)
+                            transactionRepository.addTransaction(tx, spaceId)
                         }
                     }
                     actionResponse.reply
@@ -871,9 +992,10 @@ class FinancIAViewModel @Inject constructor(
                                     createdByAi = true,
                                     isRecurring = parsed.isRecurring,
                                     installmentCount = parsed.installmentCount,
-                                    expenseNature = parsed.expenseNature
+                                    expenseNature = parsed.expenseNature,
+                                    authorName = profile.displayName
                                 )
-                                transactionRepository.addTransaction(tx)
+                                transactionRepository.addTransaction(tx, spaceId)
                                 createdList.add("• ${parsed.title}: R$ ${parsed.amount} (${parsed.category})")
                             }
                         }
@@ -889,14 +1011,14 @@ class FinancIAViewModel @Inject constructor(
             )
 
             val aiMsg = ChatMessage(role = "model", content = answerText)
-            transactionRepository.saveChatMessage(aiMsg)
+            transactionRepository.saveChatMessage(aiMsg, spaceId)
             _uiState.update { it.copy(isAdvisorThinking = false) }
         }
     }
 
     fun clearAdvisorChat() {
         viewModelScope.launch {
-            transactionRepository.clearChatHistory()
+            transactionRepository.clearChatHistory(currentActiveSpaceId())
         }
     }
 }

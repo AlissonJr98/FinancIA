@@ -42,6 +42,7 @@ import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.CreditCard
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.NotificationsActive
@@ -135,6 +136,10 @@ fun DashboardScreen(
     selectedCategory: String?,
     monthlyBudget: Double,
     isPrivacyMode: Boolean,
+    sharedSpaceId: String = "",
+    isViewingSharedSpace: Boolean = true,
+    onToggleSharedSpaceView: () -> Unit = {},
+    onOpenProfile: () -> Unit = {},
     onPreviousMonth: () -> Unit,
     onNextMonth: () -> Unit,
     onSearchQueryChange: (String) -> Unit,
@@ -796,7 +801,8 @@ fun DashboardScreen(
                             .clip(CircleShape)
                             .background(
                                 Brush.linearGradient(colors = listOf(EmeraldPrimary, AiPurple))
-                            ),
+                            )
+                            .clickable { onOpenProfile() },
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
@@ -807,21 +813,23 @@ fun DashboardScreen(
                         )
                     }
                     Spacer(modifier = Modifier.width(12.dp))
-                    Column {
+                    Column(modifier = Modifier.clickable { onOpenProfile() }) {
                         Text(
                             text = "$greeting, ${userName.split(" ").firstOrNull() ?: "Alisson"} 👋",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold
                         )
                         val quickStatus = when {
+                            sharedSpaceId.isNotBlank() && isViewingSharedSpace -> "💑 Espaço do Casal: $sharedSpaceId (Toque p/ Perfil)"
                             pendingFixedBillsCount > 0 -> "Você tem $pendingFixedBillsCount conta(s) fixa(s) no mês"
                             pendingLoansCount > 0 -> "Você tem $pendingLoansCount parcela(s) ativa(s) no mês"
-                            else -> "Suas contas do mês estão em dia!"
+                            else -> "Toque aqui para abrir Perfil, Idioma & Casal"
                         }
                         Text(
                             text = quickStatus,
                             style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = if (sharedSpaceId.isNotBlank() && isViewingSharedSpace) Color(0xFFEC4899)
+                            else MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
@@ -2125,8 +2133,9 @@ private fun TransactionRowCard(
                     transaction.isFixedOrDebt -> "Despesa Fixa"
                     else -> "Variável"
                 }
+                val authorTag = if (transaction.authorName.isNotBlank()) " • Por ${transaction.authorName}" else ""
                 Text(
-                    text = "${transaction.category} • ${transaction.accountName} • ${transaction.paymentMethod}",
+                    text = "${transaction.category} • ${transaction.accountName} • ${transaction.paymentMethod}$authorTag",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

@@ -1,6 +1,61 @@
 package com.financia.app.data.model
 
 import kotlinx.serialization.Serializable
+import java.util.Locale
+
+enum class AppLanguage(val code: String, val label: String, val flagEmoji: String) {
+    PT_BR("pt-BR", "Português (Brasil)", "🇧🇷"),
+    EN_US("en-US", "English (US)", "🇺🇸"),
+    ES_ES("es-ES", "Español", "🇪🇸");
+
+    companion object {
+        fun fromCode(code: String): AppLanguage {
+            return entries.firstOrNull { it.code.equals(code, ignoreCase = true) || it.label.equals(code, ignoreCase = true) }
+                ?: PT_BR
+        }
+    }
+}
+
+enum class AppCurrency(val code: String, val symbol: String, val label: String, val locale: Locale) {
+    BRL("BRL", "R$", "R$ - Real Brasileiro (BRL)", Locale("pt", "BR")),
+    USD("USD", "US$", "US$ - US Dollar (USD)", Locale.US),
+    EUR("EUR", "€", "€ - Euro (EUR)", Locale.GERMANY);
+
+    companion object {
+        fun fromCode(code: String): AppCurrency {
+            return entries.firstOrNull { it.code.equals(code, ignoreCase = true) || it.label.equals(code, ignoreCase = true) }
+                ?: BRL
+        }
+    }
+}
+
+enum class CoupleSplitMode(val label: String) {
+    FIFTY_FIFTY("50% / 50% (Meio a Meio)"),
+    PROPORTIONAL("Proporcional à Renda de Cada Um")
+}
+
+data class UserProfileConfig(
+    val displayName: String = "Alisson",
+    val email: String = "",
+    val languageCode: String = AppLanguage.PT_BR.code,
+    val currencyCode: String = AppCurrency.BRL.code,
+    val monthlyBudget: Double = 0.0,
+    val baseSalary: Double = 0.0,
+    val partnerSalary: Double = 0.0,
+    val payDay: Int = 5,
+    val sharedSpaceId: String = "",
+    val coupleSplitMode: String = CoupleSplitMode.FIFTY_FIFTY.name,
+    val customAccounts: List<String> = emptyList(),
+    val customCategories: List<String> = emptyList()
+)
+
+data class AchievementBadge(
+    val id: String,
+    val title: String,
+    val description: String,
+    val emoji: String,
+    val isUnlocked: Boolean
+)
 
 enum class TransactionType(val label: String) {
     INCOME("Receita"),
@@ -31,6 +86,7 @@ enum class BankAccountOption(val label: String, val colorHex: Long) {
     C6("C6 Bank", 0xFF334155),
     PICPAY("PicPay", 0xFF11C76F),
     MERCADO_PAGO("Mercado Pago", 0xFF009EE3),
+    CONTA_CASAL("Conta Conjunta Casal", 0xFFEC4899),
     CARTEIRA("Carteira / Dinheiro", 0xFF10B981),
     OUTRA("Outra Conta", 0xFF64748B);
 
@@ -92,6 +148,8 @@ data class FinancialTransaction(
     val expenseNature: String = ExpenseNature.VARIABLE.name,
     val fixedBillId: String = "",
     val loanId: String = "",
+    val authorName: String = "",
+    val authorUid: String = "",
     val createdAt: Long = System.currentTimeMillis()
 ) {
     val isIncome: Boolean
@@ -128,6 +186,8 @@ data class FinancialTransaction(
         if (id.isNotBlank()) map["id"] = id.take(128)
         if (fixedBillId.isNotBlank()) map["fixedBillId"] = fixedBillId.take(128)
         if (loanId.isNotBlank()) map["loanId"] = loanId.take(128)
+        if (authorName.isNotBlank()) map["authorName"] = authorName.take(120)
+        if (authorUid.isNotBlank()) map["authorUid"] = authorUid.take(128)
         return map
     }
 }
@@ -141,6 +201,7 @@ data class FixedBillTemplate(
     val isFixedValue: Boolean = false,
     val monthlyValues: Map<String, Double> = emptyMap(),
     val paidMonths: Map<String, Boolean> = emptyMap(),
+    val authorName: String = "",
     val createdAt: Long = System.currentTimeMillis()
 ) {
     fun amountForMonth(monthKey: String): Double {
@@ -168,6 +229,7 @@ data class FixedBillTemplate(
             "createdAt" to createdAt
         )
         if (id.isNotBlank()) map["id"] = id.take(128)
+        if (authorName.isNotBlank()) map["authorName"] = authorName.take(120)
         return map
     }
 }
@@ -183,6 +245,7 @@ data class LoanContract(
     val interestRateMonthly: Double = 0.0,
     val notes: String = "",
     val lastPaidMonthKey: String = "",
+    val authorName: String = "",
     val createdAt: Long = System.currentTimeMillis()
 ) {
     val remainingInstallments: Int
@@ -212,6 +275,7 @@ data class LoanContract(
             "createdAt" to createdAt
         )
         if (id.isNotBlank()) map["id"] = id.take(128)
+        if (authorName.isNotBlank()) map["authorName"] = authorName.take(120)
         return map
     }
 }
@@ -263,9 +327,6 @@ data class ReceivableItem(
     }
 }
 
-/**
- * Item da Lista de Compras / Desejos Planejados (Wishlist integrada ao Simulador "Posso Comprar?").
- */
 data class WishlistItem(
     val id: String = "",
     val title: String = "",
@@ -292,9 +353,6 @@ data class WishlistItem(
     }
 }
 
-/**
- * Projeção de Comprometimento Financeiro para um mês futuro.
- */
 data class FutureMonthProjection(
     val monthLabel: String,
     val fixedBillsEstimate: Double,

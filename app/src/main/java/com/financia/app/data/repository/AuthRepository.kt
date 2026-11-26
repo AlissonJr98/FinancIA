@@ -1,5 +1,9 @@
 package com.financia.app.data.repository
 
+import com.financia.app.data.model.AppCurrency
+import com.financia.app.data.model.AppLanguage
+import com.financia.app.data.model.CoupleSplitMode
+import com.financia.app.data.model.UserProfileConfig
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.auth.GoogleAuthProvider
@@ -66,8 +70,7 @@ class AuthRepository @Inject constructor(
 
     private suspend fun ensureUserProfile(user: FirebaseUser, customName: String? = null) {
         val profileData = mutableMapOf<String, Any>(
-            "displayName" to (customName ?: user.displayName ?: "Usuário FinancIA").take(120),
-            "currency" to "BRL",
+            "displayName" to (customName ?: user.displayName ?: "Alisson").take(120),
             "updatedAt" to System.currentTimeMillis()
         )
         user.email?.takeIf { it.isNotBlank() }?.let {
@@ -79,6 +82,82 @@ class AuthRepository @Inject constructor(
                 .set(profileData, SetOptions.merge())
                 .await()
         }
+    }
+
+    @Suppress("UNCHECKED_CAST")
+    fun observeUserProfileConfig(userId: String): Flow<UserProfileConfig> = callbackFlow {
+        val subscription = firestore.collection("users")
+            .document(userId)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null || snapshot == null) {
+                    trySend(UserProfileConfig())
+                    return@addSnapshotListener
+                }
+                val displayName = snapshot.getString("displayName")
+                    ?: auth.currentUser?.displayName
+                    ?: "Alisson"
+                val email = snapshot.getString("email") ?: auth.currentUser?.email ?: ""
+                val language = snapshot.getString("language") ?: AppLanguage.PT_BR.code
+                val currency = snapshot.getString("currency") ?: AppCurrency.BRL.code
+                val monthlyBudget = snapshot.getDouble("monthlyBudget") ?: 0.0
+                val baseSalary = snapshot.getDouble("baseSalary") ?: 0.0
+                val partnerSalary = snapshot.getDouble("partnerSalary") ?: 0.0
+                val payDay = (snapshot.getLong("payDay") ?: 5L).toInt().coerceIn(1, 31)
+                val sharedSpaceId = snapshot.getString("sharedSpaceId") ?: ""
+                val coupleSplitMode = snapshot.getString("coupleSplitMode") ?: CoupleSplitMode.FIFTY_FIFTY.name
+                val customAccounts = (snapshot.get("customAccounts") as? List<*>)
+                    ?.mapNotNull { it as? String } ?: emptyList()
+                val customCategories = (snapshot.get("customCategories") as? List<*>)
+                    ?.mapNotNull { it as? String } ?: emptyList()
+
+                trySend(
+                    UserProfileConfig(
+                        displayName = displayName,
+                        email = email,
+                        languageCode = language,
+                        currencyCode = currency,
+                        monthlyBudget = monthlyBudget,
+                        baseSalary = baseSalary,
+                        partnerSalary = partnerSalary,
+                        payDay = payDay,
+                        sharedSpaceId = sharedSpaceId,
+                        coupleSplitMode = coupleSplitMode,
+                        customAccounts = customAccounts,
+                        customCategories = customCategories
+                    )
+                )
+            }
+        awaitClose { subscription.remove() }
+    }
+
+    suspend fun saveUserProfileConfig(config: UserProfileConfig): Result<Unit> = runCatching {
+        val user = auth.currentUser ?: error("Usuário não autenticado.")
+        if (config.displayName.isNotBlank() && config.displayName != user.displayName) {
+            runCatching {
+                user.updateProfile(userProfileChangeRequest { displayName = config.displayName.trim() }).await()
+            }
+        }
+        val data = mutableMapOf<String, Any>(
+            "displayName" to config.displayName.trim().take(120),
+            "language" to config.languageCode.take(15),
+            "currency" to config.currencyCode.take(10),
+            "monthlyBudget" to config.monthlyBudget.coerceAtLeast(0.0),
+            "baseSalary" to config.baseSalary.coerceAtLeast(0.0),
+            "partnerSalary" to config.partnerSalary.coerceAtLeast(0.0),
+            "payDay" to config.payDay.coerceIn(1, 31),
+            "sharedSpaceId" to config.sharedSpaceId.trim().uppercase().take(64),
+            "coupleSplitMode" to config.coupleSplitMode.take(30),
+            "customAccounts" to config.customAccounts.take(30),
+            "customCategories" to config.customCategories.take(30),
+            "updatedAt" to System.currentTimeMillis()
+        )
+        if (config.email.isNotBlank()) {
+            data["email"] = config.email.take(320)
+        }
+        firestore.collection("users")
+            .document(user.uid)
+            .set(data, SetOptions.merge())
+            .await()
     }
 
     fun observeMonthlyBudget(userId: String): Flow<Double> = callbackFlow {
