@@ -39,6 +39,7 @@ data class UserProfileConfig(
     val email: String = "",
     val languageCode: String = AppLanguage.PT_BR.code,
     val currencyCode: String = AppCurrency.BRL.code,
+    val selectedTheme: String = "EMERALD_DARK",
     val monthlyBudget: Double = 0.0,
     val baseSalary: Double = 0.0,
     val partnerSalary: Double = 0.0,
@@ -291,6 +292,9 @@ data class SavingsGoal(
     val progressFraction: Float
         get() = if (targetAmount > 0) (currentAmount / targetAmount).toFloat().coerceIn(0f, 1f) else 0f
 
+    val remainingAmount: Double
+        get() = (targetAmount - currentAmount).coerceAtLeast(0.0)
+
     fun toFirestoreMap(): Map<String, Any> {
         val map = mutableMapOf<String, Any>(
             "title" to title.take(120),
@@ -300,6 +304,41 @@ data class SavingsGoal(
             "createdAt" to createdAt
         )
         if (id.isNotBlank()) map["id"] = id.take(128)
+        return map
+    }
+}
+
+data class CreditCardItem(
+    val id: String = "",
+    val name: String = "Nubank Roxo",
+    val lastDigits: String = "1234",
+    val limitTotal: Double = 3000.0,
+    val closingDay: Int = 25,
+    val dueDay: Int = 5,
+    val currentInvoice: Double = 0.0,
+    val colorHex: Long = 0xFF8A05BE,
+    val authorName: String = "",
+    val createdAt: Long = System.currentTimeMillis()
+) {
+    val limitAvailable: Double
+        get() = (limitTotal - currentInvoice).coerceAtLeast(0.0)
+
+    val usageFraction: Float
+        get() = if (limitTotal > 0) (currentInvoice / limitTotal).toFloat().coerceIn(0f, 1f) else 0f
+
+    fun toFirestoreMap(): Map<String, Any> {
+        val map = mutableMapOf<String, Any>(
+            "name" to name.take(100),
+            "lastDigits" to lastDigits.take(10),
+            "limitTotal" to limitTotal.coerceAtLeast(0.0),
+            "closingDay" to closingDay.coerceIn(1, 31),
+            "dueDay" to dueDay.coerceIn(1, 31),
+            "currentInvoice" to currentInvoice.coerceAtLeast(0.0),
+            "colorHex" to colorHex,
+            "createdAt" to createdAt
+        )
+        if (id.isNotBlank()) map["id"] = id.take(128)
+        if (authorName.isNotBlank()) map["authorName"] = authorName.take(120)
         return map
     }
 }

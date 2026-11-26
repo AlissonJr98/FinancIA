@@ -22,6 +22,7 @@ rules_version = '2';
 //   - coupleSplitMode: string (optional, <= 30 chars) - Couple expense split mode ('FIFTY_FIFTY' or 'PROPORTIONAL')
 //   - customAccounts: list (optional, <= 30 items) - User-defined custom bank/wallet account names
 //   - customCategories: list (optional, <= 30 items) - User-defined custom transaction categories
+//   - selectedTheme: string (optional, <= 30 chars) - User-selected UI theme (e.g., 'EMERALD_DARK')
 //   - updatedAt: number or timestamp (optional) - Last modification timestamp
 //
 // Subcollection: /users/{userId}/transactions/{transactionId}
@@ -117,6 +118,21 @@ rules_version = '2';
 //   - installments: int (required, 1..360) - Number of planned installments
 //   - priority: string (optional, <= 40 chars) - Priority label
 //   - bestMonthHint: string (optional, <= 120 chars) - Suggested best purchase month hint
+//   - createdAt: int, number, or timestamp (optional, immutable if present) - Creation timestamp
+//
+// Subcollection: /users/{userId}/creditCards/{cardId}
+//   (Also mirrored in /sharedSpaces/{spaceId}/creditCards/{cardId})
+// Document ID: {cardId}
+// Fields:
+//   - id: string (optional, <= 128 chars, immutable if present) - Document identifier
+//   - name: string (required, 1-100 chars) - Credit card name (e.g., 'Nubank Roxo', 'Inter Black')
+//   - lastDigits: string (optional, <= 10 chars) - Last digits of the card
+//   - limitTotal: number (required, >= 0) - Total card credit limit
+//   - closingDay: int (required, 1..31) - Invoice closing day
+//   - dueDay: int (required, 1..31) - Invoice payment due day
+//   - currentInvoice: number (optional, >= 0) - Current invoice amount
+//   - colorHex: int or number (optional) - Card branding color hex
+//   - authorName: string (optional, <= 120 chars) - Creator user display name
 //   - createdAt: int, number, or timestamp (optional, immutable if present) - Creation timestamp
 //
 // Subcollection: /users/{userId}/chatMessages/{messageId}
@@ -219,7 +235,7 @@ service cloud.firestore {
       let allowedFields = [
         'email', 'displayName', 'monthlyBudget', 'categoryBudgets', 'currency', 'updatedAt',
         'language', 'baseSalary', 'partnerSalary', 'payDay', 'sharedSpaceId',
-        'coupleSplitMode', 'customAccounts', 'customCategories'
+        'coupleSplitMode', 'customAccounts', 'customCategories', 'selectedTheme'
       ];
       return hasOnlyAllowedFields(allowedFields) &&
         data.keys().size() > 0 &&
@@ -236,6 +252,7 @@ service cloud.firestore {
         isValidOptionalString('coupleSplitMode', 0, 30) &&
         (!('customAccounts' in data) || (data.customAccounts is list && data.customAccounts.size() <= 30)) &&
         (!('customCategories' in data) || (data.customCategories is list && data.customCategories.size() <= 30)) &&
+        isValidOptionalString('selectedTheme', 0, 30) &&
         (!('updatedAt' in data) || isNumberOrTimestamp(data.updatedAt));
     }
 
@@ -399,6 +416,27 @@ service cloud.firestore {
         (!('createdAt' in data) || data.createdAt is int || isNumberOrTimestamp(data.createdAt));
     }
 
+    // Validate Credit Card document
+    function isValidCreditCard(data) {
+      let requiredFields = ['name', 'limitTotal', 'closingDay', 'dueDay'];
+      let allowedFields = [
+        'id', 'name', 'lastDigits', 'limitTotal', 'closingDay', 'dueDay',
+        'currentInvoice', 'colorHex', 'authorName', 'createdAt'
+      ];
+      return hasRequiredFields(requiredFields) &&
+        hasOnlyAllowedFields(allowedFields) &&
+        isValidOptionalString('id', 0, 128) &&
+        validStringLength('name', 1, 100) &&
+        isValidOptionalString('lastDigits', 0, 10) &&
+        (data.limitTotal is number && data.limitTotal >= 0) &&
+        (data.closingDay is int && data.closingDay >= 1 && data.closingDay <= 31) &&
+        (data.dueDay is int && data.dueDay >= 1 && data.dueDay <= 31) &&
+        (!('currentInvoice' in data) || (data.currentInvoice is number && data.currentInvoice >= 0)) &&
+        (!('colorHex' in data) || (data.colorHex is int || data.colorHex is number)) &&
+        isValidOptionalString('authorName', 0, 120) &&
+        (!('createdAt' in data) || data.createdAt is int || isNumberOrTimestamp(data.createdAt));
+    }
+
     // Validate AI Chat Message document
     function isValidChatMessage(data) {
       let requiredFields = ['role', 'content', 'timestamp'];
@@ -502,7 +540,21 @@ service cloud.firestore {
         allow delete: if isOwner(userId);
       }
 
-      // 8. User AI Chat History Subcollection
+      // 8. User Credit Cards Subcollection
+      match /creditCards/{cardId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) &&
+          isValidCreditCard(request.resource.data) &&
+          (!('id' in request.resource.data) || request.resource.data.id == '' || request.resource.data.id == cardId);
+        allow update: if isOwner(userId) &&
+          isValidCreditCard(request.resource.data) &&
+          (!('id' in request.resource.data) || request.resource.data.id == '' || request.resource.data.id == cardId) &&
+          isImmutableFieldUnchanged('id') &&
+          isImmutableFieldUnchanged('createdAt');
+        allow delete: if isOwner(userId);
+      }
+
+      // 9. User AI Chat History Subcollection
       match /chatMessages/{messageId} {
         allow read: if isOwner(userId);
         allow create: if isOwner(userId) && isValidChatMessage(request.resource.data);
@@ -511,7 +563,7 @@ service cloud.firestore {
       }
     }
 
-    // 9. Couple / Family Shared Workspaces (/sharedSpaces/{spaceId})
+    // 10. Couple / Family Shared Workspaces (/sharedSpaces/{spaceId})
     match /sharedSpaces/{spaceId} {
       allow read: if isSignedIn();
       allow create: if isSignedIn() && isValidSharedSpace(request.resource.data);
@@ -599,6 +651,20 @@ service cloud.firestore {
         allow delete: if isSignedIn();
       }
 
+      // Shared Credit Cards Subcollection
+      match /creditCards/{cardId} {
+        allow read: if isSignedIn();
+        allow create: if isSignedIn() &&
+          isValidCreditCard(request.resource.data) &&
+          (!('id' in request.resource.data) || request.resource.data.id == '' || request.resource.data.id == cardId);
+        allow update: if isSignedIn() &&
+          isValidCreditCard(request.resource.data) &&
+          (!('id' in request.resource.data) || request.resource.data.id == '' || request.resource.data.id == cardId) &&
+          isImmutableFieldUnchanged('id') &&
+          isImmutableFieldUnchanged('createdAt');
+        allow delete: if isSignedIn();
+      }
+
       // Shared AI Chat History Subcollection
       match /chatMessages/{messageId} {
         allow read: if isSignedIn();
@@ -608,7 +674,7 @@ service cloud.firestore {
       }
     }
 
-    // 10. Default Deny for all other paths
+    // 11. Default Deny for all other paths
     match /{document=**} {
       allow read, write: if false;
     }

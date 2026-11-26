@@ -11,6 +11,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -93,6 +94,7 @@ import com.financia.app.core.export.PdfReportExporter
 import com.financia.app.core.notifications.BankNotificationService
 import com.financia.app.core.widget.FinancIAWidgetProvider
 import com.financia.app.data.model.BankAccountOption
+import com.financia.app.data.model.CreditCardItem
 import com.financia.app.data.model.FinancialTransaction
 import com.financia.app.data.model.FixedBillTemplate
 import com.financia.app.data.model.FutureMonthProjection
@@ -129,12 +131,14 @@ fun DashboardScreen(
     loans: List<LoanContract>,
     savingsGoals: List<SavingsGoal>,
     wishlist: List<WishlistItem>,
+    creditCards: List<CreditCardItem> = emptyList(),
     categoryBudgets: Map<String, Double>,
     selectedMonth: Int,
     selectedYear: Int,
     searchQuery: String,
     selectedCategory: String?,
     monthlyBudget: Double,
+    payDay: Int = 5,
     isPrivacyMode: Boolean,
     sharedSpaceId: String = "",
     isViewingSharedSpace: Boolean = true,
@@ -149,6 +153,10 @@ fun DashboardScreen(
     onSaveCategoryBudget: (String, Double) -> Unit,
     onSaveWishlistItem: (WishlistItem) -> Unit,
     onDeleteWishlistItem: (String) -> Unit,
+    onSaveCreditCard: (CreditCardItem) -> Unit = {},
+    onDeleteCreditCard: (String) -> Unit = {},
+    onPayCreditCardInvoice: (CreditCardItem, Double) -> Unit = { _, _ -> },
+    onDepositSavingsGoal: (SavingsGoal, Double) -> Unit = { _, _ -> },
     onEditTransaction: (FinancialTransaction) -> Unit,
     onDuplicateTransaction: (FinancialTransaction) -> Unit,
     onDeleteTransaction: (String) -> Unit,
@@ -187,6 +195,11 @@ fun DashboardScreen(
     var showRenegotiateCardDialog by remember { mutableStateOf(false) }
     var showCanIBuyDialog by remember { mutableStateOf(false) }
     var showImportStatementDialog by remember { mutableStateOf(false) }
+    var showAddCardDialog by remember { mutableStateOf(false) }
+    var cardToPayDialog by remember { mutableStateOf<CreditCardItem?>(null) }
+    var goalToDepositDialog by remember { mutableStateOf<SavingsGoal?>(null) }
+    var selectedCalendarDay by remember { mutableStateOf<Int?>(null) }
+    var isCalendarExpanded by remember { mutableStateOf(true) }
     var importAccountName by remember { mutableStateOf(BankAccountOption.NUBANK.label) }
     var editingTransaction by remember { mutableStateOf<FinancialTransaction?>(null) }
     var selectedNatureFilter by remember { mutableStateOf("Todos os Tipos") }
@@ -377,6 +390,373 @@ fun DashboardScreen(
             dismissButton = {
                 TextButton(onClick = { showImportStatementDialog = false }) {
                     Text("Cancelar")
+                }
+            }
+        )
+    }
+
+    // Modal: Novo Cartão de Crédito Virtual
+    if (showAddCardDialog) {
+        var cardName by remember { mutableStateOf("Nubank Roxo") }
+        var lastDigits by remember { mutableStateOf("") }
+        var limitTotalText by remember { mutableStateOf("3000") }
+        var closingDayText by remember { mutableStateOf("25") }
+        var dueDayText by remember { mutableStateOf("5") }
+        var initialInvoiceText by remember { mutableStateOf("0") }
+        var selectedColorHex by remember { mutableLongStateOf(0xFF8A05BEL) }
+
+        val bankColorPresets = remember {
+            listOf(
+                "Nubank" to 0xFF8A05BEL,
+                "Inter" to 0xFFFF7A00L,
+                "Itaú" to 0xFFEC7000L,
+                "Santander" to 0xFFEC0000L,
+                "Bradesco" to 0xFFCC092FL,
+                "C6 Bank" to 0xFF334155L,
+                "XP" to 0xFF1E293BL,
+                "Gold Black" to 0xFFD4AF37L
+            )
+        }
+
+        AlertDialog(
+            onDismissRequest = { showAddCardDialog = false },
+            title = { Text("Novo Cartão de Crédito") },
+            text = {
+                Column(
+                    modifier = Modifier.verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = "Cadastre seus cartões de crédito para acompanhar faturas, limite disponível e datas de fechamento/vencimento.",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    OutlinedTextField(
+                        value = cardName,
+                        onValueChange = { cardName = it },
+                        label = { Text("Nome do Cartão (ex: Nubank Ultravioleta)") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            value = lastDigits,
+                            onValueChange = { lastDigits = it.take(4) },
+                            label = { Text("Últimos 4 dígitos") },
+                            placeholder = { Text("1234") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            singleLine = true,
+                            modifier = Modifier.weight(1f)
+                        )
+                        OutlinedTextField(
+                            value = limitTotalText,
+                            onValueChange = { limitTotalText = it },
+                            label = { Text("Limite Total (R$)") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                            singleLine = true,
+                            modifier = Modifier.weight(1.2f)
+                        )
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            value = closingDayText,
+                            onValueChange = { closingDayText = it },
+                            label = { Text("Dia Fecha") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            singleLine = true,
+                            modifier = Modifier.weight(1f)
+                        )
+                        OutlinedTextField(
+                            value = dueDayText,
+                            onValueChange = { dueDayText = it },
+                            label = { Text("Dia Vence") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            singleLine = true,
+                            modifier = Modifier.weight(1f)
+                        )
+                        OutlinedTextField(
+                            value = initialInvoiceText,
+                            onValueChange = { initialInvoiceText = it },
+                            label = { Text("Fatura Atual") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                            singleLine = true,
+                            modifier = Modifier.weight(1.3f)
+                        )
+                    }
+                    Text(text = "Cor / Estilo do Cartão:", style = MaterialTheme.typography.labelSmall)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        bankColorPresets.forEach { (bName, bColor) ->
+                            val isSel = selectedColorHex == bColor
+                            FilterChip(
+                                selected = isSel,
+                                onClick = {
+                                    selectedColorHex = bColor
+                                    if (cardName.isBlank() || cardName.startsWith("Nubank")) {
+                                        cardName = "$bName Cartão"
+                                    }
+                                },
+                                label = { Text(bName, style = MaterialTheme.typography.labelSmall) }
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val limit = limitTotalText.replace(",", ".").toDoubleOrNull() ?: 1000.0
+                        val closing = closingDayText.toIntOrNull()?.coerceIn(1, 31) ?: 25
+                        val due = dueDayText.toIntOrNull()?.coerceIn(1, 31) ?: 5
+                        val invoice = initialInvoiceText.replace(",", ".").toDoubleOrNull() ?: 0.0
+                        if (cardName.isNotBlank()) {
+                            onSaveCreditCard(
+                                CreditCardItem(
+                                    name = cardName.trim(),
+                                    lastDigits = lastDigits.trim(),
+                                    limitTotal = limit,
+                                    closingDay = closing,
+                                    dueDay = due,
+                                    currentInvoice = invoice,
+                                    colorHex = selectedColorHex
+                                )
+                            )
+                            showAddCardDialog = false
+                        }
+                    }
+                ) {
+                    Text("Salvar Cartão")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAddCardDialog = false }) {
+                    Text("Cancelar")
+                }
+            }
+        )
+    }
+
+    // Modal: Pagar Fatura do Cartão
+    if (cardToPayDialog != null) {
+        val card = cardToPayDialog!!
+        var payAmountText by remember(card) {
+            mutableStateOf(if (card.currentInvoice > 0) card.currentInvoice.toString() else "")
+        }
+
+        AlertDialog(
+            onDismissRequest = { cardToPayDialog = null },
+            title = { Text("Pagar Fatura de ${card.name}") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "Fatura atual em aberto: ${currencyFormatter.format(card.currentInvoice)}\nLimite total: ${currencyFormatter.format(card.limitTotal)}",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    OutlinedTextField(
+                        value = payAmountText,
+                        onValueChange = { payAmountText = it },
+                        label = { Text("Valor do Pagamento (R$)") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val amt = payAmountText.replace(",", ".").toDoubleOrNull() ?: 0.0
+                        if (amt > 0.0) {
+                            onPayCreditCardInvoice(card, amt)
+                            cardToPayDialog = null
+                            Toast.makeText(context, "Fatura paga e limite liberado!", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                ) {
+                    Text("Confirmar Pagamento")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { cardToPayDialog = null }) {
+                    Text("Cancelar")
+                }
+            }
+        )
+    }
+
+    // Modal: Guardar Dinheiro na Caixinha direto pelo Dashboard
+    if (goalToDepositDialog != null) {
+        val goal = goalToDepositDialog!!
+        var depositAmountText by remember(goal) { mutableStateOf("") }
+
+        AlertDialog(
+            onDismissRequest = { goalToDepositDialog = null },
+            title = { Text("Guardar em ${goal.title}") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "Saldo atual: ${currencyFormatter.format(goal.currentAmount)} / Meta: ${currencyFormatter.format(goal.targetAmount)}",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    OutlinedTextField(
+                        value = depositAmountText,
+                        onValueChange = { depositAmountText = it },
+                        label = { Text("Quanto quer guardar agora? (R$)") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val amt = depositAmountText.replace(",", ".").toDoubleOrNull() ?: 0.0
+                        if (amt > 0.0) {
+                            onDepositSavingsGoal(goal, amt)
+                            goalToDepositDialog = null
+                            Toast.makeText(context, "Valor guardado na caixinha!", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                ) {
+                    Text("Guardar Saldo")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { goalToDepositDialog = null }) {
+                    Text("Cancelar")
+                }
+            }
+        )
+    }
+
+    // Modal: Detalhes do Dia no Calendário Mensal
+    if (selectedCalendarDay != null) {
+        val day = selectedCalendarDay!!
+        val isSalarioDay = (day == payDay)
+        val dayBills = fixedBills.filter { it.dueDay == day }
+        val dayLoans = loans.filter { it.dueDay == day && it.remainingInstallments > 0 }
+        val dayCards = creditCards.filter { it.dueDay == day }
+
+        AlertDialog(
+            onDismissRequest = { selectedCalendarDay = null },
+            title = { Text("Compromissos do Dia $day de $currentMonthLabel") },
+            text = {
+                Column(
+                    modifier = Modifier.verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    if (isSalarioDay) {
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = IncomeGreen.copy(alpha = 0.15f)),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Row(modifier = Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Text("💰", style = MaterialTheme.typography.titleMedium)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Column {
+                                    Text("Dia de Pagamento / Salário", fontWeight = FontWeight.Bold, color = IncomeGreen)
+                                    Text("Recebimento do mês configurado no seu perfil", style = MaterialTheme.typography.labelSmall)
+                                }
+                            }
+                        }
+                    }
+
+                    if (dayBills.isNotEmpty()) {
+                        Text("Contas Fixas Vencendo:", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium)
+                        dayBills.forEach { bill ->
+                            val isPaid = bill.isPaidInMonth(monthKey)
+                            Card(
+                                shape = RoundedCornerShape(10.dp),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().padding(10.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(bill.name, fontWeight = FontWeight.SemiBold)
+                                        Text(if (isPaid) "✅ Paga este mês" else "⏳ Aguardando pagamento", style = MaterialTheme.typography.labelSmall)
+                                    }
+                                    Text(
+                                        text = currencyFormatter.format(bill.amountForMonth(monthKey)),
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (isPaid) IncomeGreen else ExpenseRed
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    if (dayLoans.isNotEmpty()) {
+                        Text("Parcelas / Empréstimos Vencendo:", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium)
+                        dayLoans.forEach { loan ->
+                            val isPaid = loan.isPaidInMonth(monthKey)
+                            Card(
+                                shape = RoundedCornerShape(10.dp),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().padding(10.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(loan.title, fontWeight = FontWeight.SemiBold)
+                                        Text("${loan.paidInstallments}/${loan.totalInstallments} parcelas", style = MaterialTheme.typography.labelSmall)
+                                    }
+                                    Text(
+                                        text = currencyFormatter.format(loan.installmentAmount),
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (isPaid) IncomeGreen else WarningAmber
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    if (dayCards.isNotEmpty()) {
+                        Text("Faturas de Cartão com Vencimento Hoje:", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium)
+                        dayCards.forEach { card ->
+                            Card(
+                                shape = RoundedCornerShape(10.dp),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().padding(10.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text("${card.name} (•••• ${card.lastDigits.ifBlank { "0000" }})", fontWeight = FontWeight.SemiBold)
+                                        Text("Fecha dia ${card.closingDay}", style = MaterialTheme.typography.labelSmall)
+                                    }
+                                    Text(
+                                        text = currencyFormatter.format(card.currentInvoice),
+                                        fontWeight = FontWeight.Bold,
+                                        color = ExpenseRed
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    if (!isSalarioDay && dayBills.isEmpty() && dayLoans.isEmpty() && dayCards.isEmpty()) {
+                        Text(
+                            text = "Nenhum vencimento ou conta fixa programada para o dia $day.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                Button(onClick = { selectedCalendarDay = null }) {
+                    Text("OK")
                 }
             }
         )
@@ -864,14 +1244,19 @@ fun DashboardScreen(
                         Text(
                             text = currentMonthLabel,
                             style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                         IconButton(onClick = onNextMonth) {
                             Icon(Icons.Default.ChevronRight, contentDescription = "Próximo mês")
                         }
                     }
 
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Row(
+                        modifier = Modifier.horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
                         AssistChip(
                             onClick = {
                                 PdfReportExporter.exportAndSharePdf(
@@ -987,6 +1372,438 @@ fun DashboardScreen(
                                 amountText = formatMoney(totalExpense),
                                 isIncome = false
                             )
+                        }
+                    }
+                }
+            }
+        }
+
+        // 3.01 Calendário Financeiro Mensal de Vencimentos
+        item {
+            val cal = remember(selectedMonth, selectedYear) {
+                Calendar.getInstance().apply {
+                    set(Calendar.YEAR, selectedYear)
+                    set(Calendar.MONTH, selectedMonth)
+                    set(Calendar.DAY_OF_MONTH, 1)
+                }
+            }
+            val daysInMonth = remember(selectedMonth, selectedYear) {
+                cal.getActualMaximum(Calendar.DAY_OF_MONTH)
+            }
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.CalendarMonth,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Calendário de Vencimentos ($currentMonthLabel)",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                        IconButton(
+                            onClick = { isCalendarExpanded = !isCalendarExpanded },
+                            modifier = Modifier.size(28.dp)
+                        ) {
+                            Icon(
+                                imageVector = if (isCalendarExpanded) Icons.Default.ChevronLeft else Icons.Default.ChevronRight,
+                                contentDescription = "Expandir ou recolher calendário"
+                            )
+                        }
+                    }
+
+                    if (isCalendarExpanded) {
+                        Text(
+                            text = "Toque em qualquer dia para ver o que vence ou foi pago naquela data:",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+
+                        // Legenda rápida
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(modifier = Modifier.size(8.dp).clip(CircleShape).background(IncomeGreen))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Salário (Dia $payDay)", style = MaterialTheme.typography.labelSmall)
+                            }
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(modifier = Modifier.size(8.dp).clip(CircleShape).background(ExpenseRed))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Conta Fixa", style = MaterialTheme.typography.labelSmall)
+                            }
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(modifier = Modifier.size(8.dp).clip(CircleShape).background(WarningAmber))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Parcela / Dívida", style = MaterialTheme.typography.labelSmall)
+                            }
+                        }
+
+                        // Carrossel horizontal de dias do mês
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            for (day in 1..daysInMonth) {
+                                val isToday = (day == todayDay && selectedMonth == Calendar.getInstance().get(Calendar.MONTH) && selectedYear == Calendar.getInstance().get(Calendar.YEAR))
+                                val isSalario = (day == payDay)
+                                val hasFixed = fixedBills.any { it.dueDay == day }
+                                val hasLoan = loans.any { it.dueDay == day && it.remainingInstallments > 0 }
+                                val hasCard = creditCards.any { it.dueDay == day }
+
+                                Card(
+                                    onClick = { selectedCalendarDay = day },
+                                    shape = RoundedCornerShape(12.dp),
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = if (isToday) MaterialTheme.colorScheme.primaryContainer
+                                        else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+                                    ),
+                                    modifier = Modifier
+                                        .size(width = 48.dp, height = 62.dp)
+                                        .border(
+                                            width = if (isToday) 2.dp else 1.dp,
+                                            color = if (isToday) MaterialTheme.colorScheme.primary else Color.Transparent,
+                                            shape = RoundedCornerShape(12.dp)
+                                        )
+                                ) {
+                                    Column(
+                                        modifier = Modifier.fillMaxSize().padding(4.dp),
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        verticalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Text(
+                                            text = day.toString(),
+                                            style = MaterialTheme.typography.labelLarge,
+                                            fontWeight = if (isToday) FontWeight.ExtraBold else FontWeight.Bold,
+                                            color = if (isToday) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                                        )
+                                        Row(
+                                            horizontalArrangement = Arrangement.spacedBy(2.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            if (isSalario) {
+                                                Box(modifier = Modifier.size(6.dp).clip(CircleShape).background(IncomeGreen))
+                                            }
+                                            if (hasFixed) {
+                                                Box(modifier = Modifier.size(6.dp).clip(CircleShape).background(ExpenseRed))
+                                            }
+                                            if (hasLoan) {
+                                                Box(modifier = Modifier.size(6.dp).clip(CircleShape).background(WarningAmber))
+                                            }
+                                            if (hasCard) {
+                                                Box(modifier = Modifier.size(6.dp).clip(CircleShape).background(AiPurple))
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 3.02 Carrossel Visual de Cartões de Crédito (Apple Wallet / Nubank Style)
+        item {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.CreditCard,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Meus Cartões de Crédito (${creditCards.size})",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    TextButton(onClick = { showAddCardDialog = true }) {
+                        Text("+ Novo Cartão", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                    }
+                }
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    if (creditCards.isEmpty()) {
+                        // Card de incentivo / exemplo
+                        Card(
+                            onClick = { showAddCardDialog = true },
+                            shape = RoundedCornerShape(18.dp),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+                            modifier = Modifier.width(260.dp).height(145.dp)
+                        ) {
+                            Column(
+                                modifier = Modifier.fillMaxSize().padding(16.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Center
+                            ) {
+                                Icon(Icons.Default.CreditCard, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(32.dp))
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Text("Cadastrar Cartão de Crédito", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                                Text("Acompanhe limite, fatura e vencimento", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    } else {
+                        creditCards.forEach { card ->
+                            val cardColor = Color(card.colorHex)
+                            val usagePct = (card.usageFraction * 100).toInt()
+
+                            Card(
+                                shape = RoundedCornerShape(18.dp),
+                                elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+                                modifier = Modifier.width(270.dp).height(155.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .background(
+                                            Brush.linearGradient(
+                                                colors = listOf(cardColor, cardColor.copy(alpha = 0.75f), Color(0xFF0F172A))
+                                            )
+                                        )
+                                        .padding(14.dp)
+                                ) {
+                                    Column(
+                                        modifier = Modifier.fillMaxSize(),
+                                        verticalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                // Chip dourado virtual desenhado
+                                                Box(
+                                                    modifier = Modifier
+                                                        .size(width = 24.dp, height = 18.dp)
+                                                        .clip(RoundedCornerShape(4.dp))
+                                                        .background(Color(0xFFFFD700))
+                                                )
+                                                Spacer(modifier = Modifier.width(8.dp))
+                                                Text(
+                                                    text = card.name,
+                                                    style = MaterialTheme.typography.titleSmall,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = Color.White,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                            }
+                                            Text(
+                                                text = "•••• ${card.lastDigits.ifBlank { "0000" }}",
+                                                style = MaterialTheme.typography.labelMedium,
+                                                fontWeight = FontWeight.Bold,
+                                                color = Color.White.copy(alpha = 0.85f)
+                                            )
+                                        }
+
+                                        Column {
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.SpaceBetween
+                                            ) {
+                                                Text(
+                                                    text = "Fatura: ${formatMoney(card.currentInvoice)}",
+                                                    style = MaterialTheme.typography.labelMedium,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = Color.White
+                                                )
+                                                Text(
+                                                    text = "Disp: ${formatMoney(card.limitAvailable)}",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = Color.White.copy(alpha = 0.8f)
+                                                )
+                                            }
+                                            Spacer(modifier = Modifier.height(4.dp))
+                                            LinearProgressIndicator(
+                                                progress = { card.usageFraction },
+                                                modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)),
+                                                color = if (usagePct > 80) ExpenseRed else IncomeGreen,
+                                                trackColor = Color.White.copy(alpha = 0.25f)
+                                            )
+                                        }
+
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(
+                                                text = "Fecha dia ${card.closingDay} • Vence dia ${card.dueDay}",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = Color.White.copy(alpha = 0.75f)
+                                            )
+                                            TextButton(
+                                                onClick = { cardToPayDialog = card },
+                                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                                            ) {
+                                                Text("Pagar Fatura", color = Color(0xFFA7F3D0), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelSmall)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Card extra para adicionar mais
+                        Card(
+                            onClick = { showAddCardDialog = true },
+                            shape = RoundedCornerShape(18.dp),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
+                            modifier = Modifier.width(110.dp).height(155.dp)
+                        ) {
+                            Column(
+                                modifier = Modifier.fillMaxSize().padding(8.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Center
+                            ) {
+                                Icon(Icons.Default.CreditCard, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(24.dp))
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text("+ Cartão", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 3.03 Caixinhas & Metas de Economia (Cofrinhos Inteligentes)
+        if (savingsGoals.isNotEmpty()) {
+            item {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("🐷", style = MaterialTheme.typography.titleMedium)
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "Caixinhas & Metas de Sonhos (${savingsGoals.size})",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                        TextButton(onClick = onOpenFixedAndDebts) {
+                            Text("Ver Todas", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                        }
+                    }
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        savingsGoals.forEach { goal ->
+                            val pct = (goal.progressFraction * 100).toInt()
+                            Card(
+                                shape = RoundedCornerShape(16.dp),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                                modifier = Modifier
+                                    .width(220.dp)
+                                    .border(1.dp, IncomeGreen.copy(alpha = 0.35f), RoundedCornerShape(16.dp))
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = goal.title,
+                                            style = MaterialTheme.typography.labelLarge,
+                                            fontWeight = FontWeight.Bold,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        Text(
+                                            text = "$pct%",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontWeight = FontWeight.Bold,
+                                            color = IncomeGreen
+                                        )
+                                    }
+
+                                    LinearProgressIndicator(
+                                        progress = { goal.progressFraction },
+                                        modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)),
+                                        color = IncomeGreen
+                                    )
+
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column {
+                                            Text(
+                                                text = formatMoney(goal.currentAmount),
+                                                style = MaterialTheme.typography.labelMedium,
+                                                fontWeight = FontWeight.ExtraBold,
+                                                color = IncomeGreen
+                                            )
+                                            Text(
+                                                text = "Meta: ${formatMoney(goal.targetAmount)}",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                        Button(
+                                            onClick = { goalToDepositDialog = goal },
+                                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                                            shape = RoundedCornerShape(8.dp)
+                                        ) {
+                                            Text("+ Guardar", style = MaterialTheme.typography.labelSmall)
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }

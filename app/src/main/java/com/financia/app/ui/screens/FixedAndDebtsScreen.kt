@@ -60,6 +60,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.financia.app.data.model.FixedBillTemplate
 import com.financia.app.data.model.LoanContract
@@ -828,8 +829,10 @@ fun FixedAndDebtsScreen(
                                     )
                                     Spacer(modifier = Modifier.width(6.dp))
                                     Text(
-                                        if (isPaid) "Atualizar Valor de $currentMonthLabel"
-                                        else "Informar Valor / Pagar Mês"
+                                        if (isPaid) "Atualizar Valor"
+                                        else "Informar Valor / Pagar Mês",
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
                                     )
                                 }
                             }
@@ -1037,7 +1040,9 @@ fun FixedAndDebtsScreen(
                                         Spacer(modifier = Modifier.width(6.dp))
                                         Text(
                                             if (isPaidThisMonth) "Paga no Mês ✅"
-                                            else "Pagar Parcela ${loan.paidInstallments + 1}"
+                                            else "Pagar Parcela ${loan.paidInstallments + 1}",
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
                                         )
                                     }
 

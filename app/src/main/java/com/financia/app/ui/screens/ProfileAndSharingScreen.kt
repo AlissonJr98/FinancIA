@@ -4,6 +4,8 @@ import android.content.Intent
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -100,6 +102,7 @@ fun ProfileAndSharingScreen(
     onTogglePrivacyMode: () -> Unit,
     onToggleBiometric: () -> Unit,
     onCycleThemeMode: () -> Unit,
+    onSetThemeMode: (AppThemeMode) -> Unit = {},
     onRunCoupleAiMeeting: () -> Unit,
     onSignOut: () -> Unit
 ) {
@@ -871,12 +874,62 @@ fun ProfileAndSharingScreen(
                         )
                     }
 
-                    FinancIASecondaryButton(
-                        text = "Alternar Tema Visual (Atual: ${themeMode.label})",
-                        icon = Icons.Default.AutoAwesome,
-                        modifier = Modifier.fillMaxWidth(),
-                        onClick = onCycleThemeMode
-                    )
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(
+                            text = "Paleta & Tema Visual",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            AppThemeMode.entries.forEach { mode ->
+                                val isSelected = themeMode == mode
+                                Card(
+                                    onClick = {
+                                        onSetThemeMode(mode)
+                                    },
+                                    shape = RoundedCornerShape(14.dp),
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = if (isSelected) {
+                                            MaterialTheme.colorScheme.primary.copy(alpha = 0.22f)
+                                        } else {
+                                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+                                        }
+                                    ),
+                                    modifier = Modifier
+                                        .width(140.dp)
+                                        .border(
+                                            width = if (isSelected) 2.dp else 1.dp,
+                                            color = if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent,
+                                            shape = RoundedCornerShape(14.dp)
+                                        )
+                                ) {
+                                    Column(
+                                        modifier = Modifier.padding(10.dp),
+                                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                                    ) {
+                                        Text(text = mode.emoji, style = MaterialTheme.typography.titleMedium)
+                                        Text(
+                                            text = mode.label,
+                                            style = MaterialTheme.typography.labelMedium,
+                                            fontWeight = FontWeight.Bold,
+                                            maxLines = 1
+                                        )
+                                        Text(
+                                            text = mode.subtitle,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
 
                     FinancIASecondaryButton(
                         text = "Sair da Conta (Logout)",

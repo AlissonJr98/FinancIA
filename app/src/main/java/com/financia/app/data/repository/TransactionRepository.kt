@@ -1,6 +1,7 @@
 package com.financia.app.data.repository
 
 import com.financia.app.data.model.ChatMessage
+import com.financia.app.data.model.CreditCardItem
 import com.financia.app.data.model.ExpenseNature
 import com.financia.app.data.model.FinancialTransaction
 import com.financia.app.data.model.FixedBillTemplate
@@ -499,6 +500,99 @@ class TransactionRepository @Inject constructor(
             .document(goalId)
             .delete()
             .await()
+    }
+
+    // --- Cartões de Crédito Virtuais & Faturas ---
+
+    fun observeCreditCards(userId: String, sharedSpaceId: String = ""): Flow<List<CreditCardItem>> = callbackFlow {
+        val subscription = rootDoc(userId, sharedSpaceId)
+            .collection("creditCards")
+            .orderBy("createdAt", Query.Direction.ASCENDING)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    trySend(emptyList())
+                    return@addSnapshotListener
+                }
+                val list = snapshot?.documents?.mapNotNull { doc ->
+                    val name = doc.getString("name") ?: return@mapNotNull null
+                    val lastDigits = doc.getString("lastDigits") ?: ""
+                    val limitTotal = doc.getDouble("limitTotal") ?: 3000.0
+                    val closingDay = (doc.getLong("closingDay") ?: 25L).toInt().coerceIn(1, 31)
+                    val dueDay = (doc.getLong("dueDay") ?: 5L).toInt().coerceIn(1, 31)
+                    val currentInvoice = doc.getDouble("currentInvoice") ?: 0.0
+                    val colorHex = doc.getLong("colorHex") ?: 0xFF8A05BEL
+                    val authorName = doc.getString("authorName") ?: ""
+                    val createdAt = doc.getLong("createdAt") ?: System.currentTimeMillis()
+
+                    CreditCardItem(
+                        id = doc.id,
+                        name = name,
+                        lastDigits = lastDigits,
+                        limitTotal = limitTotal,
+                        closingDay = closingDay,
+                        dueDay = dueDay,
+                        currentInvoice = currentInvoice,
+                        colorHex = colorHex,
+                        authorName = authorName,
+                        createdAt = createdAt
+                    )
+                } ?: emptyList()
+                trySend(list)
+            }
+        awaitClose { subscription.remove() }
+    }
+
+    suspend fun saveCreditCard(card: CreditCardItem, sharedSpaceId: String = ""): Result<Unit> = runCatching {
+        val uid = auth.currentUser?.uid ?: error("Usuário não autenticado.")
+        val col = rootDoc(uid, sharedSpaceId).collection("creditCards")
+        val docRef = if (card.id.isBlank()) col.document() else col.document(card.id)
+        val withId = card.copy(id = docRef.id, authorName = card.authorName.ifBlank { currentAuthorName() })
+        docRef.set(withId.toFirestoreMap()).await()
+    }
+
+    suspend fun deleteCreditCard(cardId: String, sharedSpaceId: String = ""): Result<Unit> = runCatching {
+        val uid = auth.currentUser?.uid ?: error("Usuário não autenticado.")
+        rootDoc(uid, sharedSpaceId)
+            .collection("creditCards")
+            .document(cardId)
+            .delete()
+            .await()
+    }
+
+    suspend fun payCreditCardInvoice(
+        card: CreditCardItem,
+        amountToPay: Double,
+        targetTimestamp: Long = System.currentTimeMillis(),
+        sharedSpaceId: String = ""
+    ): Result<Unit> = runCatching {
+        val uid = auth.currentUser?.uid ?: error("Usuário não autenticado.")
+        val txCol = rootDoc(uid, sharedSpaceId).collection("transactions")
+        val txDoc = txCol.document()
+        val author = currentAuthorName()
+
+        val tx = FinancialTransaction(
+            id = txDoc.id,
+            title = "Pagamento de Fatura - ${card.name} (•••• ${card.lastDigits.ifBlank { "0000" }})",
+            amount = amountToPay,
+            type = TransactionType.EXPENSE.name,
+            category = TransactionCategory.RENEGOCIACAO.label,
+            dateTimestamp = targetTimestamp,
+            paymentMethod = "Boleto / Pix",
+            accountName = card.name,
+            notes = "Fatura paga via app • Limite liberado",
+            createdByAi = false,
+            isRecurring = false,
+            installmentCount = 1,
+            installmentIndex = 1,
+            expenseNature = ExpenseNature.VARIABLE.name,
+            authorName = author,
+            authorUid = uid
+        )
+        txDoc.set(tx.toFirestoreMap()).await()
+
+        // Zera ou abate da fatura atual do cartão
+        val newInvoice = (card.currentInvoice - amountToPay).coerceAtLeast(0.0)
+        saveCreditCard(card.copy(currentInvoice = newInvoice), sharedSpaceId)
     }
 
     // --- Quem me deve / Valores A Receber ---

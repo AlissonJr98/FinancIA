@@ -11,6 +11,7 @@ import com.financia.app.core.update.GitHubUpdateChecker
 import com.financia.app.data.model.AchievementBadge
 import com.financia.app.data.model.AiExtractedTransaction
 import com.financia.app.data.model.ChatMessage
+import com.financia.app.data.model.CreditCardItem
 import com.financia.app.data.model.ExpenseNature
 import com.financia.app.data.model.FinancialTransaction
 import com.financia.app.data.model.FixedBillTemplate
@@ -58,7 +59,7 @@ data class FinancIAUiState(
     val selectedMonth: Int = Calendar.getInstance().get(Calendar.MONTH),
     val selectedYear: Int = Calendar.getInstance().get(Calendar.YEAR),
     val isPrivacyMode: Boolean = false,
-    val themeMode: AppThemeMode = AppThemeMode.DARK_AMOLED,
+    val themeMode: AppThemeMode = AppThemeMode.EMERALD_DARK,
     val isViewingSharedCoupleSpace: Boolean = true,
     val lastDeletedTransaction: FinancialTransaction? = null,
     // OTA Update States
@@ -231,6 +232,16 @@ class FinancIAViewModel @Inject constructor(
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    val creditCards: StateFlow<List<CreditCardItem>> = activeSpaceFlow
+        .flatMapLatest { (uid, spaceId) ->
+            if (uid != null) {
+                transactionRepository.observeCreditCards(uid, spaceId)
+            } else {
+                flowOf(emptyList())
+            }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
     val monthlyBudget: StateFlow<Double> = currentUser
         .flatMapLatest { user ->
             if (user != null) {
@@ -367,6 +378,14 @@ class FinancIAViewModel @Inject constructor(
 
     init {
         checkForGitHubUpdates(silent = true)
+        viewModelScope.launch {
+            userProfileConfig.collect { profile ->
+                if (profile.selectedTheme.isNotBlank()) {
+                    val mode = AppThemeMode.fromName(profile.selectedTheme)
+                    _uiState.update { it.copy(themeMode = mode) }
+                }
+            }
+        }
     }
 
     private fun currentActiveSpaceId(): String = activeSpaceFlow.value.second
@@ -395,14 +414,46 @@ class FinancIAViewModel @Inject constructor(
         }
     }
 
-    fun cycleThemeMode() {
-        _uiState.update { state ->
-            val next = when (state.themeMode) {
-                AppThemeMode.DARK_AMOLED -> AppThemeMode.LIGHT
-                AppThemeMode.LIGHT -> AppThemeMode.SYSTEM
-                AppThemeMode.SYSTEM -> AppThemeMode.DARK_AMOLED
+    fun setThemeMode(mode: AppThemeMode) {
+        _uiState.update { it.copy(themeMode = mode) }
+        viewModelScope.launch {
+            val current = userProfileConfig.value
+            if (current.selectedTheme != mode.name) {
+                saveUserProfileConfig(current.copy(selectedTheme = mode.name))
             }
-            state.copy(themeMode = next)
+        }
+    }
+
+    fun cycleThemeMode() {
+        val next = when (_uiState.value.themeMode) {
+            AppThemeMode.EMERALD_DARK -> AppThemeMode.ULTRAVIOLET
+            AppThemeMode.ULTRAVIOLET -> AppThemeMode.GOLD_BLACK
+            AppThemeMode.GOLD_BLACK -> AppThemeMode.LIGHT
+            AppThemeMode.LIGHT -> AppThemeMode.EMERALD_DARK
+        }
+        setThemeMode(next)
+    }
+
+    // --- Cartões de Crédito & Faturas ---
+
+    fun saveCreditCard(card: CreditCardItem) {
+        viewModelScope.launch {
+            val spaceId = activeSpaceFlow.value.second
+            transactionRepository.saveCreditCard(card, spaceId)
+        }
+    }
+
+    fun deleteCreditCard(cardId: String) {
+        viewModelScope.launch {
+            val spaceId = activeSpaceFlow.value.second
+            transactionRepository.deleteCreditCard(cardId, spaceId)
+        }
+    }
+
+    fun payCreditCardInvoice(card: CreditCardItem, amountToPay: Double) {
+        viewModelScope.launch {
+            val spaceId = activeSpaceFlow.value.second
+            transactionRepository.payCreditCardInvoice(card, amountToPay, System.currentTimeMillis(), spaceId)
         }
     }
 

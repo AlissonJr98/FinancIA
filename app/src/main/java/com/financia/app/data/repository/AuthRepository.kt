@@ -99,6 +99,7 @@ class AuthRepository @Inject constructor(
                 val email = snapshot.getString("email") ?: auth.currentUser?.email ?: ""
                 val language = snapshot.getString("language") ?: AppLanguage.PT_BR.code
                 val currency = snapshot.getString("currency") ?: AppCurrency.BRL.code
+                val selectedTheme = snapshot.getString("selectedTheme") ?: "EMERALD_DARK"
                 val monthlyBudget = snapshot.getDouble("monthlyBudget") ?: 0.0
                 val baseSalary = snapshot.getDouble("baseSalary") ?: 0.0
                 val partnerSalary = snapshot.getDouble("partnerSalary") ?: 0.0
@@ -116,6 +117,7 @@ class AuthRepository @Inject constructor(
                         email = email,
                         languageCode = language,
                         currencyCode = currency,
+                        selectedTheme = selectedTheme,
                         monthlyBudget = monthlyBudget,
                         baseSalary = baseSalary,
                         partnerSalary = partnerSalary,
@@ -141,6 +143,7 @@ class AuthRepository @Inject constructor(
             "displayName" to config.displayName.trim().take(120),
             "language" to config.languageCode.take(15),
             "currency" to config.currencyCode.take(10),
+            "selectedTheme" to config.selectedTheme.take(30),
             "monthlyBudget" to config.monthlyBudget.coerceAtLeast(0.0),
             "baseSalary" to config.baseSalary.coerceAtLeast(0.0),
             "partnerSalary" to config.partnerSalary.coerceAtLeast(0.0),

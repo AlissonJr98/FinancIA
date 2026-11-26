@@ -1,7 +1,7 @@
 {
-  "versionCode": 9,
-  "versionName": "1.7.0",
-  "title": "FinancIA v1.7.0 — Painel de Perfil Completo, Idiomas & Modo Casal/Família Compartilhado",
-  "notes": "• Nova aba 'Perfil/Casal' com controles completos do usuário, Renda Mensal, Dia do Pagamento e Segurança\n• Seletor de Idiomas (🇧🇷 Português, 🇺🇸 English, 🇪🇸 Español) e Moeda (R$, US$, €) integrado ao Consultor Gemini IA\n• Modo Casal & Família em Tempo Real: gere um código (ex: CASAL-4829), convide pelo WhatsApp e sincronize contas, despesas fixas (água/luz) e empréstimos entre dois celulares!\n• Calculadora de Divisão Justa do Casal (50% / 50% ou Proporcional à Renda de cada um) + Selo 'Por [Nome]' em cada lançamento\n• Criação de Contas Bancárias e Categorias Personalizadas + Conquistas Financeiras (Gamificação)",
-  "apkUrl": "https://github.com/AlissonJr98/FinancIA/releases/download/v1.7.0/FinancIA.apk"
+  "versionCode": 10,
+  "versionName": "1.8.0",
+  "title": "FinancIA v1.8.0 — Caixinhas & Metas, Cartões de Crédito Virtuais, Calendário Financeiro e 4 Temas Visuais",
+  "notes": "• Caixinhas & Metas de Sonhos: crie metas com valor-alvo, prazo e botão rápido '+ Guardar Dinheiro' direto no Dashboard\n• Carrossel Visual de Cartões de Crédito: cartões com gradiente, chip dourado, limites, faturas e botão 'Pagar Fatura'\n• Calendário Financeiro de Vencimentos: visualize os dias do mês com marcações coloridas para Salário, Contas Fixas e Parcelas\n• Mini-Calculadora Rápida no Lançamento: botões '÷ 2 (Metade Casal)', '÷ 3', '+ R$ 10', '+ R$ 50', '+ R$ 100' e 'Limpar'\n• 4 Temas Visuais Personalizados: Esmeralda Neo-Bank (AMOLED), Ultravioleta Premium, Gold Black Edition e Clean Light\n• Otimizações Visuais & Responsividade: ajustes finos para que nenhum botão seja cortado em telas de diferentes tamanhos",
+  "apkUrl": "https://github.com/AlissonJr98/FinancIA/releases/download/v1.8.0/FinancIA.apk"
 }

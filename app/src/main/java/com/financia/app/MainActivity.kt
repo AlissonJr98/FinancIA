@@ -124,6 +124,7 @@ fun FinancIAAppRoot(
     val fixedBills by viewModel.fixedBills.collectAsState()
     val loans by viewModel.loans.collectAsState()
     val savingsGoals by viewModel.savingsGoals.collectAsState()
+    val creditCards by viewModel.creditCards.collectAsState()
     val receivables by viewModel.receivables.collectAsState()
     val wishlist by viewModel.wishlist.collectAsState()
     val achievements by viewModel.achievements.collectAsState()
@@ -333,9 +334,10 @@ fun FinancIAAppRoot(
                     IconButton(onClick = { viewModel.cycleThemeMode() }) {
                         Icon(
                             imageVector = when (uiState.themeMode) {
-                                AppThemeMode.DARK_AMOLED -> Icons.Default.DarkMode
+                                AppThemeMode.EMERALD_DARK -> Icons.Default.DarkMode
+                                AppThemeMode.ULTRAVIOLET -> Icons.Default.AutoAwesome
+                                AppThemeMode.GOLD_BLACK -> Icons.Default.DarkMode
                                 AppThemeMode.LIGHT -> Icons.Default.LightMode
-                                AppThemeMode.SYSTEM -> Icons.Default.AutoAwesome
                             },
                             contentDescription = "Alternar Tema (${uiState.themeMode.label})"
                         )
@@ -417,12 +419,14 @@ fun FinancIAAppRoot(
                         loans = loans,
                         savingsGoals = savingsGoals,
                         wishlist = wishlist,
+                        creditCards = creditCards,
                         categoryBudgets = categoryBudgets,
                         selectedMonth = uiState.selectedMonth,
                         selectedYear = uiState.selectedYear,
                         searchQuery = uiState.searchQuery,
                         selectedCategory = uiState.selectedCategoryFilter,
                         monthlyBudget = monthlyBudget,
+                        payDay = profileConfig.payDay,
                         isPrivacyMode = uiState.isPrivacyMode,
                         sharedSpaceId = profileConfig.sharedSpaceId,
                         isViewingSharedSpace = uiState.isViewingSharedCoupleSpace,
@@ -437,6 +441,12 @@ fun FinancIAAppRoot(
                         onSaveCategoryBudget = viewModel::updateCategoryBudget,
                         onSaveWishlistItem = viewModel::saveWishlistItem,
                         onDeleteWishlistItem = viewModel::deleteWishlistItem,
+                        onSaveCreditCard = viewModel::saveCreditCard,
+                        onDeleteCreditCard = viewModel::deleteCreditCard,
+                        onPayCreditCardInvoice = viewModel::payCreditCardInvoice,
+                        onDepositSavingsGoal = { goal, amt ->
+                            viewModel.saveSavingsGoal(goal.copy(currentAmount = goal.currentAmount + amt))
+                        },
                         onEditTransaction = viewModel::updateExistingTransaction,
                         onDuplicateTransaction = viewModel::duplicateTransaction,
                         onDeleteTransaction = viewModel::deleteTransaction,
@@ -524,6 +534,7 @@ fun FinancIAAppRoot(
                         onTogglePrivacyMode = viewModel::togglePrivacyMode,
                         onToggleBiometric = toggleBiometricAction,
                         onCycleThemeMode = viewModel::cycleThemeMode,
+                        onSetThemeMode = viewModel::setThemeMode,
                         onRunCoupleAiMeeting = {
                             currentTab = MainTab.ADVISOR
                             viewModel.sendAdvisorMessage(

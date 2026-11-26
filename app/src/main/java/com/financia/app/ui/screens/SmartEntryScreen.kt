@@ -75,6 +75,7 @@ import com.financia.app.ui.components.FinancIAPrimaryButton
 import com.financia.app.ui.components.FinancIASecondaryButton
 import com.financia.app.ui.components.FinancIATextField
 import com.financia.app.ui.theme.AiPurple
+import java.util.Locale
 
 @Composable
 fun SmartEntryScreen(
@@ -434,6 +435,67 @@ fun SmartEntryScreen(
                         onDateSelected = { selectedTimestamp = it },
                         modifier = Modifier.weight(0.9f)
                     )
+                }
+
+                // Mini-Calculadora Rápida no Campo de Valor (Divisão de conta, soma rápida e limpar)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    val currentVal = amountText.replace(",", ".").toDoubleOrNull() ?: 0.0
+
+                    AssistChip(
+                        onClick = {
+                            if (currentVal > 0) {
+                                val half = (currentVal / 2.0 * 100.0).toInt() / 100.0
+                                amountText = if (half % 1.0 == 0.0) half.toInt().toString() else String.format(Locale.US, "%.2f", half)
+                            }
+                        },
+                        label = { Text("÷ 2 (Metade Casal)", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold) }
+                    )
+
+                    AssistChip(
+                        onClick = {
+                            if (currentVal > 0) {
+                                val third = (currentVal / 3.0 * 100.0).toInt() / 100.0
+                                amountText = if (third % 1.0 == 0.0) third.toInt().toString() else String.format(Locale.US, "%.2f", third)
+                            }
+                        },
+                        label = { Text("÷ 3", style = MaterialTheme.typography.labelSmall) }
+                    )
+
+                    AssistChip(
+                        onClick = {
+                            val next = currentVal + 10.0
+                            amountText = if (next % 1.0 == 0.0) next.toInt().toString() else String.format(Locale.US, "%.2f", next)
+                        },
+                        label = { Text("+ R$ 10", style = MaterialTheme.typography.labelSmall) }
+                    )
+
+                    AssistChip(
+                        onClick = {
+                            val next = currentVal + 50.0
+                            amountText = if (next % 1.0 == 0.0) next.toInt().toString() else String.format(Locale.US, "%.2f", next)
+                        },
+                        label = { Text("+ R$ 50", style = MaterialTheme.typography.labelSmall) }
+                    )
+
+                    AssistChip(
+                        onClick = {
+                            val next = currentVal + 100.0
+                            amountText = if (next % 1.0 == 0.0) next.toInt().toString() else String.format(Locale.US, "%.2f", next)
+                        },
+                        label = { Text("+ R$ 100", style = MaterialTheme.typography.labelSmall) }
+                    )
+
+                    if (amountText.isNotBlank()) {
+                        AssistChip(
+                            onClick = { amountText = "" },
+                            label = { Text("Limpar ✕", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error) }
+                        )
+                    }
                 }
 
                 // Dropdown 1: Categoria + Dropdown 2: Conta / Banco (Nubank, Inter, Itaú...)
