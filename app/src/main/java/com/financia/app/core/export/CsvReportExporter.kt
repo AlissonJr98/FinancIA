@@ -11,6 +11,21 @@ import java.util.Locale
 
 object CsvReportExporter {
 
+    /**
+     * Sanitiza células de texto para prevenir CSV / Formula Injection (CWE-1236).
+     * Prefixos como '=', '+', '-', '@', '\t' e '\r' são escapados com um apóstrofo (').
+     */
+    fun sanitizeCsvCell(value: String): String {
+        val cleaned = value.replace(";", ",").replace("\n", " ").replace("\r", " ").trim()
+        if (cleaned.isNotEmpty()) {
+            val firstChar = cleaned[0]
+            if (firstChar == '=' || firstChar == '+' || firstChar == '-' || firstChar == '@' || firstChar == '\t') {
+                return "'$cleaned"
+            }
+        }
+        return cleaned
+    }
+
     fun exportAndShareCsv(
         context: Context,
         transactions: List<FinancialTransaction>,
@@ -29,13 +44,15 @@ object CsvReportExporter {
                 val dateStr = dateFormatter.format(Date(tx.dateTimestamp))
                 val typeStr = if (tx.isIncome) "Receita" else "Despesa"
                 val amountStr = String.format(Locale("pt", "BR"), "%.2f", tx.amount)
-                val cleanTitle = tx.title.replace(";", ",")
-                val cleanNotes = tx.notes.replace(";", ",").replace("\n", " ")
+                val cleanTitle = sanitizeCsvCell(tx.title)
+                val cleanCategory = sanitizeCsvCell(tx.category)
+                val cleanPaymentMethod = sanitizeCsvCell(tx.paymentMethod)
+                val cleanNotes = sanitizeCsvCell(tx.notes)
                 val recurringStr = if (tx.isRecurring) "Sim" else "Não"
                 val installmentStr = "${tx.installmentIndex}/${tx.installmentCount}"
                 val aiStr = if (tx.createdByAi) "Sim" else "Não"
 
-                appendLine("$dateStr;$cleanTitle;$typeStr;${tx.category};$amountStr;${tx.paymentMethod};$recurringStr;$installmentStr;$aiStr;$cleanNotes")
+                appendLine("$dateStr;$cleanTitle;$typeStr;$cleanCategory;$amountStr;$cleanPaymentMethod;$recurringStr;$installmentStr;$aiStr;$cleanNotes")
             }
         }
 

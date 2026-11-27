@@ -31,6 +31,15 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxValue
+import androidx.compose.material3.rememberSwipeToDismissBoxState
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
@@ -107,6 +116,8 @@ import com.financia.app.data.model.WishlistItem
 import com.financia.app.ui.components.CategoryIconMapper
 import com.financia.app.ui.components.FinancIADatePickerField
 import com.financia.app.ui.components.FinancIADropdownField
+import com.financia.app.ui.components.FinancIAPeriodSplitSelector
+import com.financia.app.ui.components.FinancIASegmentedFilter
 import com.financia.app.ui.components.FinancIATextField
 import com.financia.app.ui.theme.AiPurple
 import com.financia.app.ui.theme.EmeraldDark
@@ -167,6 +178,7 @@ fun DashboardScreen(
     onImportStatement: (Uri, String, (Int) -> Unit) -> Unit
 ) {
     val context = LocalContext.current
+    val haptic = LocalHapticFeedback.current
     val currencyFormatter = remember { NumberFormat.getCurrencyInstance(Locale("pt", "BR")) }
     val dateFormatter = remember { SimpleDateFormat("dd/MM/yyyy • HH:mm", Locale("pt", "BR")) }
 
@@ -552,7 +564,7 @@ fun DashboardScreen(
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
-                        text = "Fatura atual em aberto: ${currencyFormatter.format(card.currentInvoice)}\nLimite total: ${currencyFormatter.format(card.limitTotal)}",
+                        text = "Fatura atual em aberto: ${formatMoney(card.currentInvoice)}\nLimite total: ${formatMoney(card.limitTotal)}",
                         style = MaterialTheme.typography.bodySmall
                     )
                     OutlinedTextField(
@@ -1229,29 +1241,22 @@ fun DashboardScreen(
             }
         }
 
-        // 2. Seletor de Mês/Ano + Exportar PDF / Excel / Importar Extrato
+        // 2. Seletor de Mês/Ano Split + Exportar PDF / Excel / Importar Extrato
         item {
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        IconButton(onClick = onPreviousMonth) {
-                            Icon(Icons.Default.ChevronLeft, contentDescription = "Mês anterior")
-                        }
-                        Text(
-                            text = currentMonthLabel,
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        IconButton(onClick = onNextMonth) {
-                            Icon(Icons.Default.ChevronRight, contentDescription = "Próximo mês")
-                        }
-                    }
+                    FinancIAPeriodSplitSelector(
+                        periodLabel = currentMonthLabel,
+                        onPrevious = onPreviousMonth,
+                        onNext = onNextMonth,
+                        modifier = Modifier.weight(1f)
+                    )
+
+                    Spacer(modifier = Modifier.width(8.dp))
 
                     Row(
                         modifier = Modifier.horizontalScroll(rememberScrollState()),
@@ -1338,7 +1343,10 @@ fun DashboardScreen(
                                 color = Color.White.copy(alpha = 0.85f)
                             )
                             IconButton(
-                                onClick = onTogglePrivacyMode,
+                                onClick = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    onTogglePrivacyMode()
+                                },
                                 modifier = Modifier.size(28.dp)
                             ) {
                                 Icon(
@@ -2723,6 +2731,37 @@ fun DashboardScreen(
                         fontWeight = FontWeight.Bold
                     )
 
+                    // Filtro Split Segmentado de 1 Toque (Todos | Despesas | Receitas | Dívidas) com Contadores
+                    FinancIASegmentedFilter(
+                        options = listOf("Todos", "Despesas", "Receitas", "Dívidas"),
+                        selectedOption = when (selectedNatureFilter) {
+                            "Apenas Despesas" -> "Despesas"
+                            "Apenas Receitas" -> "Receitas"
+                            "Empréstimos & Dívidas" -> "Dívidas"
+                            else -> "Todos"
+                        },
+                        onOptionSelected = { chosen ->
+                            selectedNatureFilter = when (chosen) {
+                                "Despesas" -> "Apenas Despesas"
+                                "Receitas" -> "Apenas Receitas"
+                                "Dívidas" -> "Empréstimos & Dívidas"
+                                else -> "Todos os Tipos"
+                            }
+                        },
+                        counts = mapOf(
+                            "Todos" to transactions.size,
+                            "Despesas" to transactions.count { !it.isIncome },
+                            "Receitas" to transactions.count { it.isIncome },
+                            "Dívidas" to transactions.count { it.isDebtNature }
+                        ),
+                        optionColors = mapOf(
+                            "Todos" to MaterialTheme.colorScheme.primary,
+                            "Despesas" to ExpenseRed,
+                            "Receitas" to IncomeGreen,
+                            "Dívidas" to AiPurple
+                        )
+                    )
+
                     FinancIATextField(
                         value = searchQuery,
                         onValueChange = onSearchQueryChange,
@@ -2816,17 +2855,81 @@ fun DashboardScreen(
             }
         } else {
             items(filteredTransactions, key = { it.id }) { tx ->
-                TransactionRowCard(
-                    transaction = tx,
-                    formattedAmount = formatMoney(tx.amount),
-                    formattedDate = dateFormatter.format(Date(tx.dateTimestamp)),
-                    onEdit = { editingTransaction = tx },
-                    onDuplicate = {
-                        onDuplicateTransaction(tx)
-                        Toast.makeText(context, "Lançamento '${tx.title}' duplicado para hoje!", Toast.LENGTH_SHORT).show()
-                    },
-                    onDelete = { onDeleteTransaction(tx.id) }
+                val currentTx by rememberUpdatedState(tx)
+                val dismissState = rememberSwipeToDismissBoxState(
+                    confirmValueChange = { dismissValue ->
+                        when (dismissValue) {
+                            SwipeToDismissBoxValue.EndToStart -> {
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                onDeleteTransaction(currentTx.id)
+                                true
+                            }
+                            SwipeToDismissBoxValue.StartToEnd -> {
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                editingTransaction = currentTx
+                                false
+                            }
+                            SwipeToDismissBoxValue.Settled -> false
+                        }
+                    }
                 )
+
+                SwipeToDismissBox(
+                    state = dismissState,
+                    enableDismissFromStartToEnd = true,
+                    enableDismissFromEndToStart = true,
+                    backgroundContent = {
+                        val direction = dismissState.dismissDirection
+                        val color by animateColorAsState(
+                            targetValue = when (dismissState.targetValue) {
+                                SwipeToDismissBoxValue.EndToStart -> ExpenseRed
+                                SwipeToDismissBoxValue.StartToEnd -> MaterialTheme.colorScheme.primary
+                                else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                            },
+                            label = "swipeBg"
+                        )
+                        val icon = when (direction) {
+                            SwipeToDismissBoxValue.StartToEnd -> Icons.Default.Edit
+                            SwipeToDismissBoxValue.EndToStart -> Icons.Default.Delete
+                            else -> null
+                        }
+                        val alignment = when (direction) {
+                            SwipeToDismissBoxValue.StartToEnd -> Alignment.CenterStart
+                            SwipeToDismissBoxValue.EndToStart -> Alignment.CenterEnd
+                            else -> Alignment.Center
+                        }
+
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(color)
+                                .padding(horizontal = 20.dp),
+                            contentAlignment = alignment
+                        ) {
+                            if (icon != null) {
+                                Icon(
+                                    imageVector = icon,
+                                    contentDescription = null,
+                                    tint = Color.White,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                            }
+                        }
+                    }
+                ) {
+                    TransactionRowCard(
+                        transaction = tx,
+                        formattedAmount = formatMoney(tx.amount),
+                        formattedDate = dateFormatter.format(Date(tx.dateTimestamp)),
+                        onEdit = { editingTransaction = tx },
+                        onDuplicate = {
+                            onDuplicateTransaction(tx)
+                            Toast.makeText(context, "Lançamento '${tx.title}' duplicado para hoje!", Toast.LENGTH_SHORT).show()
+                        },
+                        onDelete = { onDeleteTransaction(tx.id) }
+                    )
+                }
             }
         }
     }

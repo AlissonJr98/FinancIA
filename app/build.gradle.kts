@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
@@ -15,21 +17,38 @@ android {
         applicationId = "com.financia.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 10
-        versionName = "1.8.0"
+        versionCode = 11
+        versionName = "1.9.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    val localProps = Properties()
+    val localPropsFile = rootProject.file("local.properties")
+    if (localPropsFile.exists()) {
+        localProps.load(localPropsFile.inputStream())
+    }
+
     signingConfigs {
         create("release") {
-            // Usa sempre a mesma keystore oficial (financia-release.jks) tanto no build local
-            // quanto no servidor de CI, garantindo o mesmo certificado SHA-1 e evitando
-            // erro de "conflito com pacote existente" nas atualizações OTA!
-            storeFile = file("financia-release.jks")
-            storePassword = "android"
-            keyAlias = "androiddebugkey"
-            keyPassword = "android"
+            // Carrega credenciais de forma segura via variáveis de ambiente do CI ou local.properties
+            val keyPath = System.getenv("KEYSTORE_PATH")
+                ?: localProps.getProperty("keystore.path")
+                ?: "financia-release.jks"
+            val storePass = System.getenv("KEYSTORE_PASSWORD")
+                ?: localProps.getProperty("keystore.password")
+                ?: "android"
+            val alias = System.getenv("KEY_ALIAS")
+                ?: localProps.getProperty("key.alias")
+                ?: "androiddebugkey"
+            val keyPass = System.getenv("KEY_PASSWORD")
+                ?: localProps.getProperty("key.password")
+                ?: "android"
+
+            storeFile = file(keyPath)
+            storePassword = storePass
+            keyAlias = alias
+            keyPassword = keyPass
         }
     }
 
@@ -87,6 +106,8 @@ dependencies {
     // Coroutines & JSON Serialization
     implementation(libs.kotlinx.coroutines.play.services)
     implementation(libs.kotlinx.serialization.json)
+
+    testImplementation("junit:junit:4.13.2")
 
     debugImplementation(libs.androidx.ui.tooling)
 }

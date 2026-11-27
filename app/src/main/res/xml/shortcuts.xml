@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="shortcut_add_expense"
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher"
+        android:shortcutShortLabel="@string/shortcut_new_expense"
+        android:shortcutLongLabel="@string/shortcut_new_expense_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.financia.app"
+            android:targetClass="com.financia.app.MainActivity">
+            <extra android:name="target_tab" android:value="SMART_ADD" />
+        </intent>
+    </shortcut>
+    <shortcut
+        android:shortcutId="shortcut_add_income"
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher"
+        android:shortcutShortLabel="@string/shortcut_new_income"
+        android:shortcutLongLabel="@string/shortcut_new_income_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.financia.app"
+            android:targetClass="com.financia.app.MainActivity">
+            <extra android:name="target_tab" android:value="SMART_ADD" />
+        </intent>
+    </shortcut>
+    <shortcut
+        android:shortcutId="shortcut_ai_advisor"
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher"
+        android:shortcutShortLabel="@string/shortcut_advisor"
+        android:shortcutLongLabel="@string/shortcut_advisor_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.financia.app"
+            android:targetClass="com.financia.app.MainActivity">
+            <extra android:name="target_tab" android:value="ADVISOR" />
+        </intent>
+    </shortcut>
+</shortcuts>

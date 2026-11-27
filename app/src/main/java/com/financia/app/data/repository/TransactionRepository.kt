@@ -14,6 +14,7 @@ import com.financia.app.data.model.TransactionType
 import com.financia.app.data.model.WishlistItem
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.DocumentReference
+import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
 import com.google.firebase.firestore.SetOptions
@@ -58,17 +59,24 @@ class TransactionRepository @Inject constructor(
         require(code.length >= 4) { "Código do Espaço Compartilhado deve ter pelo menos 4 caracteres." }
 
         val spaceDoc = firestore.collection("sharedSpaces").document(code)
+        val snapshot = runCatching { spaceDoc.get().await() }.getOrNull()
+        val exists = snapshot != null && snapshot.exists()
+
         val meta = mutableMapOf<String, Any>(
             "spaceId" to code,
             "spaceName" to "Espaço Casal & Família ($code)",
-            "updatedAt" to System.currentTimeMillis()
+            "updatedAt" to System.currentTimeMillis(),
+            "memberUids" to FieldValue.arrayUnion(user.uid)
         )
+        if (!exists) {
+            meta["ownerUid"] = user.uid
+            meta["ownerName"] = currentAuthorName()
+            meta["createdAt"] = System.currentTimeMillis()
+        }
         if (partnerNameHint.isNotBlank()) {
             meta["partnerName"] = partnerNameHint.trim().take(120)
         }
-        runCatching {
-            spaceDoc.set(meta, SetOptions.merge()).await()
-        }
+        spaceDoc.set(meta, SetOptions.merge()).await()
 
         // Vincula o perfil do usuário ao código do casal
         firestore.collection("users")
@@ -86,6 +94,20 @@ class TransactionRepository @Inject constructor(
 
     suspend fun leaveSharedSpace(): Result<Unit> = runCatching {
         val user = auth.currentUser ?: error("Usuário não autenticado.")
+        val userDoc = runCatching {
+            firestore.collection("users").document(user.uid).get().await()
+        }.getOrNull()
+        val currentSpaceId = userDoc?.getString("sharedSpaceId").orEmpty().trim().uppercase()
+
+        if (currentSpaceId.isNotBlank()) {
+            runCatching {
+                firestore.collection("sharedSpaces")
+                    .document(currentSpaceId)
+                    .update("memberUids", FieldValue.arrayRemove(user.uid))
+                    .await()
+            }
+        }
+
         firestore.collection("users")
             .document(user.uid)
             .set(
@@ -298,14 +320,11 @@ class TransactionRepository @Inject constructor(
             monthlyValues = updatedMonthly,
             paidMonths = updatedPaid
         )
-        rootDoc(uid, sharedSpaceId)
-            .collection("fixedBills")
-            .document(bill.id)
-            .set(updatedBill.toFirestoreMap())
-            .await()
 
-        val txCol = rootDoc(uid, sharedSpaceId).collection("transactions")
-        val txDoc = txCol.document()
+        val batch = firestore.batch()
+        val billRef = rootDoc(uid, sharedSpaceId).collection("fixedBills").document(bill.id)
+        val txDoc = rootDoc(uid, sharedSpaceId).collection("transactions").document()
+
         val tx = FinancialTransaction(
             id = txDoc.id,
             title = "${bill.name} (Conta Fixa $monthKey)",
@@ -324,7 +343,10 @@ class TransactionRepository @Inject constructor(
             authorName = currentAuthorName(),
             authorUid = uid
         )
-        txDoc.set(tx.toFirestoreMap()).await()
+
+        batch.set(billRef, updatedBill.toFirestoreMap())
+        batch.set(txDoc, tx.toFirestoreMap())
+        batch.commit().await()
     }
 
     suspend fun deleteFixedBill(billId: String, sharedSpaceId: String = ""): Result<Unit> = runCatching {
@@ -403,14 +425,10 @@ class TransactionRepository @Inject constructor(
             lastPaidMonthKey = if (!isAmortization) monthKey else loan.lastPaidMonthKey
         )
 
-        rootDoc(uid, sharedSpaceId)
-            .collection("loans")
-            .document(loan.id)
-            .set(updatedLoan.toFirestoreMap())
-            .await()
+        val batch = firestore.batch()
+        val loanRef = rootDoc(uid, sharedSpaceId).collection("loans").document(loan.id)
+        val txDoc = rootDoc(uid, sharedSpaceId).collection("transactions").document()
 
-        val txCol = rootDoc(uid, sharedSpaceId).collection("transactions")
-        val txDoc = txCol.document()
         val labelSuffix = if (isAmortization) {
             "Amortização +${installmentsPaidNow}x (${newPaidCount}/${loan.totalInstallments})"
         } else {
@@ -442,7 +460,10 @@ class TransactionRepository @Inject constructor(
             authorName = currentAuthorName(),
             authorUid = uid
         )
-        txDoc.set(tx.toFirestoreMap()).await()
+
+        batch.set(loanRef, updatedLoan.toFirestoreMap())
+        batch.set(txDoc, tx.toFirestoreMap())
+        batch.commit().await()
     }
 
     suspend fun deleteLoanContract(loanId: String, sharedSpaceId: String = ""): Result<Unit> = runCatching {
@@ -566,8 +587,9 @@ class TransactionRepository @Inject constructor(
         sharedSpaceId: String = ""
     ): Result<Unit> = runCatching {
         val uid = auth.currentUser?.uid ?: error("Usuário não autenticado.")
-        val txCol = rootDoc(uid, sharedSpaceId).collection("transactions")
-        val txDoc = txCol.document()
+        val batch = firestore.batch()
+        val txDoc = rootDoc(uid, sharedSpaceId).collection("transactions").document()
+        val cardDoc = rootDoc(uid, sharedSpaceId).collection("creditCards").document(card.id)
         val author = currentAuthorName()
 
         val tx = FinancialTransaction(
@@ -588,11 +610,13 @@ class TransactionRepository @Inject constructor(
             authorName = author,
             authorUid = uid
         )
-        txDoc.set(tx.toFirestoreMap()).await()
 
-        // Zera ou abate da fatura atual do cartão
         val newInvoice = (card.currentInvoice - amountToPay).coerceAtLeast(0.0)
-        saveCreditCard(card.copy(currentInvoice = newInvoice), sharedSpaceId)
+        val updatedCard = card.copy(currentInvoice = newInvoice)
+
+        batch.set(txDoc, tx.toFirestoreMap())
+        batch.set(cardDoc, updatedCard.toFirestoreMap())
+        batch.commit().await()
     }
 
     // --- Quem me deve / Valores A Receber ---
@@ -639,14 +663,11 @@ class TransactionRepository @Inject constructor(
     suspend fun markReceivableAsPaid(item: ReceivableItem, targetTimestamp: Long, sharedSpaceId: String = ""): Result<Unit> = runCatching {
         val uid = auth.currentUser?.uid ?: error("Usuário não autenticado.")
         val updated = item.copy(isReceived = true)
-        rootDoc(uid, sharedSpaceId)
-            .collection("receivables")
-            .document(item.id)
-            .set(updated.toFirestoreMap())
-            .await()
 
-        val txCol = rootDoc(uid, sharedSpaceId).collection("transactions")
-        val txDoc = txCol.document()
+        val batch = firestore.batch()
+        val recDoc = rootDoc(uid, sharedSpaceId).collection("receivables").document(item.id)
+        val txDoc = rootDoc(uid, sharedSpaceId).collection("transactions").document()
+
         val tx = FinancialTransaction(
             id = txDoc.id,
             title = "Recebido de ${item.personName} (${item.description})",
@@ -660,7 +681,10 @@ class TransactionRepository @Inject constructor(
             authorName = currentAuthorName(),
             authorUid = uid
         )
-        txDoc.set(tx.toFirestoreMap()).await()
+
+        batch.set(recDoc, updated.toFirestoreMap())
+        batch.set(txDoc, tx.toFirestoreMap())
+        batch.commit().await()
     }
 
     suspend fun deleteReceivable(itemId: String, sharedSpaceId: String = ""): Result<Unit> = runCatching {

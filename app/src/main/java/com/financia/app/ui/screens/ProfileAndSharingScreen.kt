@@ -74,16 +74,17 @@ import com.financia.app.data.model.UserProfileConfig
 import com.financia.app.ui.components.FinancIADropdownField
 import com.financia.app.ui.components.FinancIAPrimaryButton
 import com.financia.app.ui.components.FinancIASecondaryButton
+import com.financia.app.ui.components.FinancIASegmentedFilter
 import com.financia.app.ui.components.FinancIATextField
 import com.financia.app.ui.theme.AiPurple
 import com.financia.app.ui.theme.AppThemeMode
+import com.financia.app.core.util.SecureCodeGenerator
 import com.financia.app.ui.theme.EmeraldDark
 import com.financia.app.ui.theme.EmeraldPrimary
 import com.financia.app.ui.theme.IncomeGreen
 import java.text.NumberFormat
 import java.util.Locale
 import kotlin.math.abs
-import kotlin.random.Random
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -363,7 +364,7 @@ fun ProfileAndSharingScreen(
                         FinancIATextField(
                             value = inviteCodeInput,
                             onValueChange = { inviteCodeInput = it.uppercase() },
-                            label = "Código do Espaço do Casal (ex: CASAL-4829)",
+                            label = "Código do Espaço do Casal (ex: CASAL-7K9M-X2P4)",
                             leadingIcon = Icons.Default.GroupAdd
                         )
 
@@ -372,12 +373,11 @@ fun ProfileAndSharingScreen(
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             FinancIASecondaryButton(
-                                text = "Gerar Código Novo",
+                                text = "Gerar Código",
                                 icon = Icons.Default.AutoAwesome,
                                 modifier = Modifier.weight(1f),
                                 onClick = {
-                                    val randomNum = Random.nextInt(1000, 9999)
-                                    val newCode = "CASAL-$randomNum"
+                                    val newCode = SecureCodeGenerator.generatePairingCode()
                                     inviteCodeInput = newCode
                                     onCreateOrJoinSharedSpace(newCode, "")
                                     Toast.makeText(context, "Espaço $newCode criado e ativado!", Toast.LENGTH_SHORT).show()
@@ -385,7 +385,7 @@ fun ProfileAndSharingScreen(
                             )
 
                             FinancIAPrimaryButton(
-                                text = "Entrar no Código",
+                                text = "Entrar no Espaço",
                                 icon = Icons.Default.Check,
                                 enabled = inviteCodeInput.trim().length >= 4,
                                 modifier = Modifier.weight(1f),
@@ -406,11 +406,17 @@ fun ProfileAndSharingScreen(
                         fontWeight = FontWeight.Bold
                     )
 
-                    FinancIADropdownField(
-                        label = "Regra de Divisão das Despesas",
-                        selectedValue = selectedSplitModeLabel,
+                    Text(
+                        text = "Regra de Divisão das Despesas",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    FinancIASegmentedFilter(
                         options = CoupleSplitMode.entries.map { it.label },
-                        onOptionSelected = { selectedSplitModeLabel = it }
+                        selectedOption = selectedSplitModeLabel,
+                        onOptionSelected = { selectedSplitModeLabel = it },
+                        modifier = Modifier.fillMaxWidth()
                     )
 
                     Row(

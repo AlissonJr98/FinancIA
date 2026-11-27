@@ -13,15 +13,35 @@ import kotlin.math.abs
  */
 object BankStatementImporter {
 
+    const val MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024 // 5 MB de limite defensivo
+
+    /**
+     * Lê um stream de dados até o limite máximo de bytes para evitar estouro de memória (OOM).
+     * Retorna null caso o arquivo exceda o tamanho permitido.
+     */
+    fun readLimitedStream(inputStream: java.io.InputStream, maxBytes: Int = MAX_FILE_SIZE_BYTES): String? {
+        val buffer = java.io.ByteArrayOutputStream()
+        val chunk = ByteArray(8192)
+        var totalRead = 0
+        var bytesRead: Int
+        while (inputStream.read(chunk).also { bytesRead = it } != -1) {
+            totalRead += bytesRead
+            if (totalRead > maxBytes) {
+                return null // Arquivo excede o limite permitido
+            }
+            buffer.write(chunk, 0, bytesRead)
+        }
+        return buffer.toString("UTF-8")
+    }
+
     fun parseStatementUri(
         context: Context,
         uri: Uri,
         defaultAccountName: String,
         aiRepository: AiFinancialRepository
     ): List<FinancialTransaction> {
-        val rawText = context.contentResolver.openInputStream(uri)?.bufferedReader()?.use {
-            it.readText()
-        } ?: return emptyList()
+        val stream = context.contentResolver.openInputStream(uri) ?: return emptyList()
+        val rawText = stream.use { readLimitedStream(it) } ?: return emptyList()
 
         return if (rawText.contains("<OFX>", ignoreCase = true) || rawText.contains("<STMTTRN>", ignoreCase = true)) {
             parseOfxContent(rawText, defaultAccountName, aiRepository)

@@ -1,7 +1,7 @@
 {
-  "versionCode": 10,
-  "versionName": "1.8.0",
-  "title": "FinancIA v1.8.0 — Caixinhas & Metas, Cartões de Crédito Virtuais, Calendário Financeiro e 4 Temas Visuais",
-  "notes": "• Caixinhas & Metas de Sonhos: crie metas com valor-alvo, prazo e botão rápido '+ Guardar Dinheiro' direto no Dashboard\n• Carrossel Visual de Cartões de Crédito: cartões com gradiente, chip dourado, limites, faturas e botão 'Pagar Fatura'\n• Calendário Financeiro de Vencimentos: visualize os dias do mês com marcações coloridas para Salário, Contas Fixas e Parcelas\n• Mini-Calculadora Rápida no Lançamento: botões '÷ 2 (Metade Casal)', '÷ 3', '+ R$ 10', '+ R$ 50', '+ R$ 100' e 'Limpar'\n• 4 Temas Visuais Personalizados: Esmeralda Neo-Bank (AMOLED), Ultravioleta Premium, Gold Black Edition e Clean Light\n• Otimizações Visuais & Responsividade: ajustes finos para que nenhum botão seja cortado em telas de diferentes tamanhos",
-  "apkUrl": "https://github.com/AlissonJr98/FinancIA/releases/download/v1.8.0/FinancIA.apk"
+  "versionCode": 11,
+  "versionName": "1.9.0",
+  "title": "FinancIA v1.9.0 — Modo Privacidade, Swipe-to-Action, Simulador de Desconto Nubank, Haptics e Filtros Split",
+  "notes": "• Modo Privacidade 100% Blindado: ícone de olho no topo do Dashboard para ocultar saldos, faturas e transações com segurança em público\n• Gestos Rápidos (Swipe-to-Action): deslize para a esquerda para excluir com desfazer via Snackbar, e para a direita para editar\n• Resposta Tátil (Haptic Feedback): vibrações nativas suaves ao alternar filtros split, clicar em botões e realizar ações no app\n• Simulador de Desconto em Antecipação (Estilo Nubank): calcule em tempo real a economia de juros a valor presente ao adiantar parcelas de empréstimos\n• App Shortcuts no Launcher: segure o ícone do FinancIA na tela inicial para lançar despesa, receita ou abrir o consultor IA direto\n• Novo Filtro Split Segmentado: navegação rápida e moderna por categorias, tipo de transação e divisão justa do casal\n• Auditoria Completa de Segurança: regras de Firestore fortificadas, prevenção a CSV/Prompt injection e gerador seguro de códigos de pareamento",
+  "apkUrl": "https://github.com/AlissonJr98/FinancIA/releases/download/v1.9.0/FinancIA.apk"
 }

@@ -269,7 +269,17 @@ fun FinancIAAppRoot(
         return
     }
 
-    var currentTab by rememberSaveable { mutableStateOf(MainTab.DASHBOARD) }
+    var currentTab by rememberSaveable {
+        val target = activity.intent?.getStringExtra("target_tab")
+        val initial = when (target) {
+            "SMART_ADD" -> MainTab.SMART_ADD
+            "ADVISOR" -> MainTab.ADVISOR
+            "FIXED_AND_DEBTS" -> MainTab.FIXED_AND_DEBTS
+            "PROFILE" -> MainTab.PROFILE
+            else -> MainTab.DASHBOARD
+        }
+        mutableStateOf(initial)
+    }
     val displayUserName = profileConfig.displayName.takeIf { it.isNotBlank() }
         ?: currentUser?.displayName?.takeIf { it.isNotBlank() }
         ?: currentUser?.email?.substringBefore("@")

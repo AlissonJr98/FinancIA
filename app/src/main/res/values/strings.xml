@@ -1,3 +1,9 @@
 <resources>
     <string name="app_name">FinancIA</string>
+    <string name="shortcut_new_expense">Nova Despesa</string>
+    <string name="shortcut_new_expense_long">Lançar Nova Despesa com IA</string>
+    <string name="shortcut_new_income">Nova Receita</string>
+    <string name="shortcut_new_income_long">Lançar Nova Receita</string>
+    <string name="shortcut_advisor">Consultor IA</string>
+    <string name="shortcut_advisor_long">Conversar com Consultor Gemini IA</string>
 </resources>

@@ -40,12 +40,16 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.ui.text.style.TextDecoration
+import kotlin.math.pow
+import com.financia.app.ui.components.FinancIASegmentedFilter
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -376,33 +380,140 @@ fun FixedAndDebtsScreen(
         )
     }
 
-    // --- Modal: Amortizar / Antecipar Parcelas ---
+    // --- Modal: Simulador de Desconto & Amortização de Parcelas (Estilo Nubank) ---
     if (loanToAmortizeDialog != null) {
         val loan = loanToAmortizeDialog!!
-        var extraCountText by remember(loan) { mutableStateOf("1") }
-        var paidValueText by remember(loan) { mutableStateOf(loan.installmentAmount.toString()) }
+        val maxRemaining = loan.remainingInstallments.coerceAtLeast(1)
+        var extraCount by remember(loan) { mutableIntStateOf(1.coerceAtMost(maxRemaining)) }
+        val customRate = remember(loan) {
+            if (loan.interestRateMonthly > 0) loan.interestRateMonthly else 1.8
+        }
+        val monthlyRate = customRate / 100.0
+        val nominalTotal = extraCount * loan.installmentAmount
+
+        // Cálculo a Valor Presente: desconto composto das últimas parcelas
+        val simulatedPresentValue = remember(extraCount, monthlyRate, loan.installmentAmount, loan.remainingInstallments) {
+            var sumPv = 0.0
+            val startFromEnd = loan.remainingInstallments
+            for (step in 0 until extraCount) {
+                val monthsAhead = (startFromEnd - step).coerceAtLeast(1)
+                sumPv += loan.installmentAmount / (1.0 + monthlyRate).pow(monthsAhead.toDouble())
+            }
+            sumPv
+        }
+        val simulatedSavings = (nominalTotal - simulatedPresentValue).coerceAtLeast(0.0)
+        var paidValueText by remember(simulatedPresentValue) {
+            mutableStateOf(String.format(java.util.Locale.US, "%.2f", simulatedPresentValue))
+        }
 
         AlertDialog(
             onDismissRequest = { loanToAmortizeDialog = null },
-            title = { Text("Amortizar / Antecipar Parcelas") },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.Savings,
+                        contentDescription = null,
+                        tint = IncomeGreen,
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Simulador de Desconto")
+                }
+            },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text(
-                        text = "Antecipou parcelas do final de '${loan.title}' com desconto? Informe quantas parcelas foram abatidas e o valor total pago com desconto:",
-                        style = MaterialTheme.typography.bodySmall
+                        text = "Antecipe parcelas de '${loan.title}' com desconto a valor presente. Quanto mais parcelas do final você antecipa, mais juros economiza!",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    OutlinedTextField(
-                        value = extraCountText,
-                        onValueChange = {
-                            extraCountText = it
-                            val c = it.toIntOrNull() ?: 1
-                            paidValueText = (loan.installmentAmount * c).toString()
-                        },
-                        label = { Text("Quantidade de parcelas amortizadas") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
+
+                    // Seletor de quantidade de parcelas
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Parcelas: $extraCount de $maxRemaining",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            OutlinedButton(
+                                onClick = {
+                                    if (extraCount > 1) {
+                                        extraCount--
+                                    }
+                                },
+                                enabled = extraCount > 1
+                            ) {
+                                Text("-", fontWeight = FontWeight.Bold)
+                            }
+                            Button(
+                                onClick = {
+                                    if (extraCount < maxRemaining) {
+                                        extraCount++
+                                    }
+                                },
+                                enabled = extraCount < maxRemaining
+                            ) {
+                                Text("+", fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+
+                    // Card de Economia / Comparativo
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(
+                            containerColor = IncomeGreen.copy(alpha = 0.12f)
+                        ),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text("Valor sem desconto:", style = MaterialTheme.typography.bodySmall)
+                                Text(
+                                    currencyFormatter.format(nominalTotal),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    textDecoration = TextDecoration.LineThrough
+                                )
+                            }
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text("Com desconto hoje:", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+                                Text(
+                                    currencyFormatter.format(simulatedPresentValue),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = IncomeGreen
+                                )
+                            }
+                            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text("Economia em juros:", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = IncomeGreen)
+                                Text(
+                                    "Economiza ${currencyFormatter.format(simulatedSavings)} 🎉",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = IncomeGreen
+                                )
+                            }
+                        }
+                    }
+
                     OutlinedTextField(
                         value = paidValueText,
                         onValueChange = { paidValueText = it },
@@ -416,8 +527,8 @@ fun FixedAndDebtsScreen(
             confirmButton = {
                 Button(
                     onClick = {
-                        val count = extraCountText.toIntOrNull()?.coerceIn(1, loan.remainingInstallments.coerceAtLeast(1)) ?: 1
-                        val valuePaid = paidValueText.replace(",", ".").toDoubleOrNull() ?: (loan.installmentAmount * count)
+                        val count = extraCount.coerceIn(1, maxRemaining)
+                        val valuePaid = paidValueText.replace(",", ".").toDoubleOrNull() ?: simulatedPresentValue
                         onPayOrAmortizeLoan(loan, count, valuePaid, monthKey, true)
                         loanToAmortizeDialog = null
                     }
@@ -635,35 +746,25 @@ fun FixedAndDebtsScreen(
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        // Seletor de Sub-Abas
+        // Seletor de Sub-Abas (Split Filter)
         item {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                FilterChip(
-                    selected = activeSection == 0,
-                    onClick = { activeSection = 0 },
-                    label = { Text("Contas Fixas (${fixedBills.size})") }
-                )
-                FilterChip(
-                    selected = activeSection == 1,
-                    onClick = { activeSection = 1 },
-                    label = { Text("Dívidas & Parcelas (${loans.size})") }
-                )
-                FilterChip(
-                    selected = activeSection == 2,
-                    onClick = { activeSection = 2 },
-                    label = { Text("Caixinhas (${savingsGoals.size})") }
-                )
-                FilterChip(
-                    selected = activeSection == 3,
-                    onClick = { activeSection = 3 },
-                    label = { Text("A Receber (${receivables.count { !it.isReceived }})") }
-                )
-            }
+            val sections = listOf("Contas Fixas", "Dívidas & Parcelas", "Caixinhas", "A Receber")
+            val counts = mapOf(
+                "Contas Fixas" to fixedBills.size,
+                "Dívidas & Parcelas" to loans.size,
+                "Caixinhas" to savingsGoals.size,
+                "A Receber" to receivables.count { !it.isReceived }
+            )
+            FinancIASegmentedFilter(
+                options = sections,
+                selectedOption = sections.getOrElse(activeSection) { sections[0] },
+                counts = counts,
+                isScrollable = true,
+                onOptionSelected = { selected ->
+                    activeSection = sections.indexOf(selected).coerceAtLeast(0)
+                },
+                modifier = Modifier.fillMaxWidth()
+            )
         }
 
         // =========================================================================
@@ -1050,9 +1151,9 @@ fun FixedAndDebtsScreen(
                                         onClick = { loanToAmortizeDialog = loan },
                                         shape = RoundedCornerShape(10.dp)
                                     ) {
-                                        Icon(Icons.Default.FastForward, contentDescription = null, modifier = Modifier.size(16.dp))
+                                        Icon(Icons.Default.Savings, contentDescription = null, modifier = Modifier.size(16.dp), tint = IncomeGreen)
                                         Spacer(modifier = Modifier.width(4.dp))
-                                        Text("Amortizar")
+                                        Text("Simular Desconto", maxLines = 1, overflow = TextOverflow.Ellipsis)
                                     }
                                 }
                             } else {
