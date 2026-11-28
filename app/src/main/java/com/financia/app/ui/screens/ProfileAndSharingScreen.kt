@@ -4,6 +4,7 @@ import android.content.Intent
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
@@ -17,6 +18,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -46,9 +48,12 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -131,10 +136,9 @@ fun ProfileAndSharingScreen(
     var payDayText by remember(profileConfig.payDay) {
         mutableStateOf(profileConfig.payDay.toString())
     }
-    var selectedSplitModeLabel by remember(profileConfig.coupleSplitMode) {
-        val mode = runCatching { CoupleSplitMode.valueOf(profileConfig.coupleSplitMode) }
-            .getOrDefault(CoupleSplitMode.FIFTY_FIFTY)
-        mutableStateOf(mode.label)
+    var selectedSplitOption by remember(profileConfig.coupleSplitMode) {
+        val isProp = profileConfig.coupleSplitMode == CoupleSplitMode.PROPORTIONAL.name
+        mutableStateOf(if (isProp) "Proporcional" else "50% / 50%")
     }
 
     var inviteCodeInput by remember(profileConfig.sharedSpaceId) {
@@ -167,8 +171,8 @@ fun ProfileAndSharingScreen(
     val partnerSalary = partnerSalaryText.replace(",", ".").toDoubleOrNull() ?: profileConfig.partnerSalary
     val totalHouseholdSalary = mySalary + partnerSalary
 
-    val myShareFraction = remember(selectedSplitModeLabel, mySalary, partnerSalary) {
-        if (selectedSplitModeLabel.startsWith("Proporcional") && totalHouseholdSalary > 0.0) {
+    val myShareFraction = remember(selectedSplitOption, mySalary, partnerSalary) {
+        if (selectedSplitOption == "Proporcional" && totalHouseholdSalary > 0.0) {
             (mySalary / totalHouseholdSalary).toFloat().coerceIn(0.05f, 0.95f)
         } else {
             0.5f
@@ -303,37 +307,59 @@ fun ProfileAndSharingScreen(
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Column {
+                                    Column(modifier = Modifier.weight(1f)) {
                                         Text(
                                             text = "Código do Casal Conectado",
                                             style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
                                         )
                                         Text(
                                             text = profileConfig.sharedSpaceId,
                                             style = MaterialTheme.typography.titleLarge,
                                             fontWeight = FontWeight.ExtraBold,
-                                            color = Color(0xFFEC4899)
+                                            color = Color(0xFFEC4899),
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
                                         )
                                     }
 
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Text(
-                                            text = if (isViewingSharedSpace) "Vendo Casal" else "Vendo Pessoal",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            fontWeight = FontWeight.Bold
+                                    Surface(
+                                        onClick = onToggleSharedSpaceView,
+                                        shape = RoundedCornerShape(12.dp),
+                                        color = if (isViewingSharedSpace) Color(0xFFEC4899).copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                        border = BorderStroke(
+                                            1.dp,
+                                            if (isViewingSharedSpace) Color(0xFFEC4899) else MaterialTheme.colorScheme.outline.copy(alpha = 0.25f)
                                         )
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                        Switch(
-                                            checked = isViewingSharedSpace,
-                                            onCheckedChange = { onToggleSharedSpaceView() }
-                                        )
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = if (isViewingSharedSpace) Icons.Default.Favorite else Icons.Default.Person,
+                                                contentDescription = null,
+                                                tint = if (isViewingSharedSpace) Color(0xFFEC4899) else MaterialTheme.colorScheme.onSurfaceVariant,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                            Text(
+                                                text = if (isViewingSharedSpace) "Casal" else "Pessoal",
+                                                style = MaterialTheme.typography.labelMedium,
+                                                fontWeight = FontWeight.Bold,
+                                                color = if (isViewingSharedSpace) Color(0xFFEC4899) else MaterialTheme.colorScheme.onSurfaceVariant,
+                                                maxLines = 1
+                                            )
+                                        }
                                     }
                                 }
 
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     FinancIASecondaryButton(
                                         text = "Convidar WhatsApp",
@@ -349,12 +375,23 @@ fun ProfileAndSharingScreen(
                                                 Intent.createChooser(sendIntent, "Convidar parceiro(a) no WhatsApp").apply {
                                                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                                                 }
-                                            )
+                                             )
                                         }
                                     )
 
-                                    TextButton(onClick = onLeaveSharedSpace) {
-                                        Text("Desconectar", color = MaterialTheme.colorScheme.error)
+                                    OutlinedButton(
+                                        onClick = onLeaveSharedSpace,
+                                        shape = RoundedCornerShape(16.dp),
+                                        modifier = Modifier.heightIn(min = 48.dp),
+                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+                                    ) {
+                                        Text(
+                                            text = "Desconectar",
+                                            color = MaterialTheme.colorScheme.error,
+                                            style = MaterialTheme.typography.labelLarge,
+                                            fontWeight = FontWeight.SemiBold,
+                                            maxLines = 1
+                                        )
                                     }
                                 }
                             }
@@ -373,7 +410,7 @@ fun ProfileAndSharingScreen(
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             FinancIASecondaryButton(
-                                text = "Gerar Código",
+                                text = "Novo Código",
                                 icon = Icons.Default.AutoAwesome,
                                 modifier = Modifier.weight(1f),
                                 onClick = {
@@ -385,7 +422,7 @@ fun ProfileAndSharingScreen(
                             )
 
                             FinancIAPrimaryButton(
-                                text = "Entrar no Espaço",
+                                text = "Conectar",
                                 icon = Icons.Default.Check,
                                 enabled = inviteCodeInput.trim().length >= 4,
                                 modifier = Modifier.weight(1f),
@@ -413,10 +450,19 @@ fun ProfileAndSharingScreen(
                     )
 
                     FinancIASegmentedFilter(
-                        options = CoupleSplitMode.entries.map { it.label },
-                        selectedOption = selectedSplitModeLabel,
-                        onOptionSelected = { selectedSplitModeLabel = it },
+                        options = listOf("50% / 50%", "Proporcional"),
+                        selectedOption = selectedSplitOption,
+                        onOptionSelected = { selectedSplitOption = it },
                         modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Text(
+                        text = if (selectedSplitOption == "Proporcional")
+                            "💡 Proporcional: contribuição baseada na renda de cada um."
+                        else
+                            "💡 50% / 50%: todas as despesas são divididas igualmente ao meio.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
 
                     Row(
@@ -465,20 +511,55 @@ fun ProfileAndSharingScreen(
                                 )
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
-                                    Text(
-                                        text = "• Sua parte ($myPct%): ${currencyFormatter.format(myTargetContribution)}",
-                                        style = MaterialTheme.typography.labelMedium,
-                                        color = MaterialTheme.colorScheme.primary,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                    Text(
-                                        text = "• Parceiro(a) ($partnerPct%): ${currencyFormatter.format(partnerTargetContribution)}",
-                                        style = MaterialTheme.typography.labelMedium,
-                                        color = Color(0xFFEC4899),
-                                        fontWeight = FontWeight.Bold
-                                    )
+                                    Surface(
+                                        modifier = Modifier.weight(1f),
+                                        shape = RoundedCornerShape(10.dp),
+                                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
+                                    ) {
+                                        Column(modifier = Modifier.padding(8.dp)) {
+                                            Text(
+                                                text = "Sua parte ($myPct%)",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.primary,
+                                                fontWeight = FontWeight.Medium,
+                                                maxLines = 1
+                                            )
+                                            Text(
+                                                text = currencyFormatter.format(myTargetContribution),
+                                                style = MaterialTheme.typography.titleSmall,
+                                                fontWeight = FontWeight.Bold,
+                                                color = MaterialTheme.colorScheme.primary,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                        }
+                                    }
+
+                                    Surface(
+                                        modifier = Modifier.weight(1f),
+                                        shape = RoundedCornerShape(10.dp),
+                                        color = Color(0xFFEC4899).copy(alpha = 0.1f)
+                                    ) {
+                                        Column(modifier = Modifier.padding(8.dp)) {
+                                            Text(
+                                                text = "Parceiro(a) ($partnerPct%)",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = Color(0xFFEC4899),
+                                                fontWeight = FontWeight.Medium,
+                                                maxLines = 1
+                                            )
+                                            Text(
+                                                text = currencyFormatter.format(partnerTargetContribution),
+                                                style = MaterialTheme.typography.titleSmall,
+                                                fontWeight = FontWeight.Bold,
+                                                color = Color(0xFFEC4899),
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                        }
+                                    }
                                 }
 
                                 if (expensesByAuthor.size >= 1) {
@@ -496,7 +577,7 @@ fun ProfileAndSharingScreen(
                     }
 
                     FinancIAPrimaryButton(
-                        text = "Fazer Reunião Financeira do Casal com Gemini IA",
+                        text = "Reunião de Casal com Gemini IA",
                         icon = Icons.Default.AutoAwesome,
                         isAiStyle = true,
                         onClick = onRunCoupleAiMeeting
@@ -567,7 +648,7 @@ fun ProfileAndSharingScreen(
                     )
 
                     FinancIAPrimaryButton(
-                        text = "Salvar Configurações do Perfil",
+                        text = "Salvar Configurações",
                         icon = Icons.Default.Check,
                         onClick = {
                             val chosenLang = AppLanguage.entries.firstOrNull {
@@ -576,9 +657,11 @@ fun ProfileAndSharingScreen(
                             val chosenCurr = AppCurrency.entries.firstOrNull {
                                 selectedCurrencyLabel.contains(it.code)
                             } ?: AppCurrency.BRL
-                            val chosenSplit = CoupleSplitMode.entries.firstOrNull {
-                                it.label == selectedSplitModeLabel
-                            } ?: CoupleSplitMode.FIFTY_FIFTY
+                            val chosenSplit = if (selectedSplitOption == "Proporcional") {
+                                CoupleSplitMode.PROPORTIONAL
+                            } else {
+                                CoupleSplitMode.FIFTY_FIFTY
+                            }
 
                             val updated = profileConfig.copy(
                                 displayName = displayName.trim().ifBlank { "Alisson" },

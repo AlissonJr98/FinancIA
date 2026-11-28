@@ -1,7 +1,7 @@
 {
-  "versionCode": 11,
-  "versionName": "1.9.0",
-  "title": "FinancIA v1.9.0 — Modo Privacidade, Swipe-to-Action, Simulador de Desconto Nubank, Haptics e Filtros Split",
-  "notes": "• Modo Privacidade 100% Blindado: ícone de olho no topo do Dashboard para ocultar saldos, faturas e transações com segurança em público\n• Gestos Rápidos (Swipe-to-Action): deslize para a esquerda para excluir com desfazer via Snackbar, e para a direita para editar\n• Resposta Tátil (Haptic Feedback): vibrações nativas suaves ao alternar filtros split, clicar em botões e realizar ações no app\n• Simulador de Desconto em Antecipação (Estilo Nubank): calcule em tempo real a economia de juros a valor presente ao adiantar parcelas de empréstimos\n• App Shortcuts no Launcher: segure o ícone do FinancIA na tela inicial para lançar despesa, receita ou abrir o consultor IA direto\n• Novo Filtro Split Segmentado: navegação rápida e moderna por categorias, tipo de transação e divisão justa do casal\n• Auditoria Completa de Segurança: regras de Firestore fortificadas, prevenção a CSV/Prompt injection e gerador seguro de códigos de pareamento",
-  "apkUrl": "https://github.com/AlissonJr98/FinancIA/releases/download/v1.9.0/FinancIA.apk"
+  "versionCode": 12,
+  "versionName": "1.9.1",
+  "title": "FinancIA v1.9.1 — Ajustes de Responsividade do Modo Casal & Conta Conjunta",
+  "notes": "• Otimização dos Botões do Modo Casal: botões de divisão ('50% / 50%' e 'Proporcional') e pareamento sem quebra de texto em qualquer tela\n• Seletor Rápido de Espaço no Dashboard: alterne instantaneamente entre 'Pessoal' e 'Casal' direto pelo cabeçalho com resposta tátil\n• Visualização de Contribuição Justa em Cards: valores e porcentagens de cada parceiro agora exibidos em blocos dedicados sem sobreposição\n• Botão de Reunião IA Compacto: texto ajustado para caber perfeitamente sem truncamento\n• Chip de Divisão Rápida '÷ 2 (Casal)' no Lançamento: proporção ideal para telas compactas",
+  "apkUrl": "https://github.com/AlissonJr98/FinancIA/releases/download/v1.9.1/FinancIA.apk"
 }

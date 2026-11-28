@@ -453,7 +453,7 @@ fun SmartEntryScreen(
                                 amountText = if (half % 1.0 == 0.0) half.toInt().toString() else String.format(Locale.US, "%.2f", half)
                             }
                         },
-                        label = { Text("÷ 2 (Metade Casal)", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold) }
+                        label = { Text("÷ 2 (Casal)", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, maxLines = 1) }
                     )
 
                     AssistChip(

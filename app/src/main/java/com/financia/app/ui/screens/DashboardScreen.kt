@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -53,6 +54,7 @@ import androidx.compose.material.icons.filled.CreditCard
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.NotificationsActive
@@ -77,6 +79,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -1212,10 +1215,11 @@ fun DashboardScreen(
                             fontWeight = FontWeight.Bold
                         )
                         val quickStatus = when {
-                            sharedSpaceId.isNotBlank() && isViewingSharedSpace -> "💑 Espaço do Casal: $sharedSpaceId (Toque p/ Perfil)"
+                            sharedSpaceId.isNotBlank() && isViewingSharedSpace -> "💑 Espaço do Casal ($sharedSpaceId)"
+                            sharedSpaceId.isNotBlank() && !isViewingSharedSpace -> "👤 Espaço Pessoal (Toque p/ Casal)"
                             pendingFixedBillsCount > 0 -> "Você tem $pendingFixedBillsCount conta(s) fixa(s) no mês"
                             pendingLoansCount > 0 -> "Você tem $pendingLoansCount parcela(s) ativa(s) no mês"
-                            else -> "Toque aqui para abrir Perfil, Idioma & Casal"
+                            else -> "Toque aqui para abrir Perfil & Idioma"
                         }
                         Text(
                             text = quickStatus,
@@ -1226,18 +1230,58 @@ fun DashboardScreen(
                     }
                 }
 
-                AssistChip(
-                    onClick = { showCanIBuyDialog = true },
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.Default.Calculate,
-                            contentDescription = null,
-                            tint = AiPurple,
-                            modifier = Modifier.size(16.dp)
-                        )
-                    },
-                    label = { Text("Posso Comprar?", style = MaterialTheme.typography.labelSmall) }
-                )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (sharedSpaceId.isNotBlank()) {
+                        Surface(
+                            onClick = {
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                onToggleSharedSpaceView()
+                            },
+                            shape = RoundedCornerShape(12.dp),
+                            color = if (isViewingSharedSpace) Color(0xFFEC4899).copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                            border = BorderStroke(
+                                1.dp,
+                                if (isViewingSharedSpace) Color(0xFFEC4899) else MaterialTheme.colorScheme.outline.copy(alpha = 0.25f)
+                            )
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Icon(
+                                    imageVector = if (isViewingSharedSpace) Icons.Default.Favorite else Icons.Default.Person,
+                                    contentDescription = null,
+                                    tint = if (isViewingSharedSpace) Color(0xFFEC4899) else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                Text(
+                                    text = if (isViewingSharedSpace) "Casal" else "Pessoal",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (isViewingSharedSpace) Color(0xFFEC4899) else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1
+                                )
+                            }
+                        }
+                    }
+
+                    AssistChip(
+                        onClick = { showCanIBuyDialog = true },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Default.Calculate,
+                                contentDescription = null,
+                                tint = AiPurple,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        },
+                        label = { Text("Posso Comprar?", style = MaterialTheme.typography.labelSmall) }
+                    )
+                }
             }
         }
 
